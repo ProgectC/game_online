@@ -13,3 +13,6 @@ Thumbs.db
 desktop.ini
 .vscode/
 *.log
+
+# Server multiplayer scaricato in automatico dal .bat: si riscarica da solo.
+netplay-server/

@@ -12,9 +12,139 @@ import { stat, readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { networkInterfaces } from 'node:os';
+
+/** Indirizzi IPv4 di questo PC sulla rete locale (per invitare un amico). */
+function lanAddresses() {
+  const out = [];
+  const ifs = networkInterfaces();
+  for (const name in ifs) {
+    for (const net of ifs[name] || []) {
+      if (net.family !== 'IPv4' && net.family !== 4) continue;
+      if (net.internal) continue;                 // scarta 127.0.0.1
+      out.push(net.address);
+    }
+  }
+  // Gli indirizzi di casa (192.168.x, 10.x, 172.16-31.x) vengono prima.
+  const privato = (a) => /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a);
+  return out.sort((a, b) => (privato(b) ? 1 : 0) - (privato(a) ? 1 : 0));
+}
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PORT = process.env.PORT || 5173;
+
+/* CHIUSO DI DEFAULT: ascolta solo su questo computer, nessun altro puo'
+   raggiungerlo nemmeno in casa. Si apre alla rete solo quando lo decidi tu,
+   con "APRI ALLA RETE.bat" (che imposta HOST=0.0.0.0).                      */
+const HOST = process.env.HOST || '127.0.0.1';
+
+// Indirizzo del server netplay (WebRTC). Vuoto = multiplayer disattivato.
+// Si imposta cosi':  NETPLAY=http://192.168.1.50:3000 node server.mjs
+const NETPLAY = process.env.NETPLAY || '';
+
+/* CODICE D'ACCESSO. Chi arriva dalla rete non vede NIENTE finche' non lo
+   inserisce: ne' i giochi, ne' l'elenco, ne' un indizio su cosa ci sia dietro.
+   Dal tuo computer non viene mai chiesto. Il link d'invito lo contiene gia',
+   quindi per il tuo amico e' automatico: clicca e entra. */
+function nuovoCodice() {
+  return Array.from({ length: 6 },
+    () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+}
+let CODE = process.env.CODE || nuovoCodice();
+
+/* LA STANZA.
+   host      = chi ha avviato il server (questo computer). Comanda lui.
+   ospiti    = chi e' entrato col link: nickname, ruolo, ultimo segno di vita.
+   espulsi   = token e indirizzi buttati fuori: non rientrano in QUESTA stanza.
+   Chiudendo il server la stanza sparisce; alla riapertura la chiave e' nuova
+   e l'elenco degli espulsi riparte da zero, come volevi. */
+const STANZA = {
+  hostNick: '',
+  ospiti: new Map(),      // token -> { nick, ruolo, ip, visto, entrato }
+  espulsi: new Set(),     // token e IP
+  chiusa: false,          // chiusa = il link non fa entrare piu' NESSUNO di nuovo,
+                          // ma chi e' gia' dentro resta e continua a giocare
+};
+
+const OSPITE_SCADUTO = 25000;   // 25s senza segni di vita = uscito
+
+/** Ripulisce chi ha chiuso la pagina senza dire niente. */
+function potaOspiti() {
+  const ora = Date.now();
+  for (const [tok, o] of STANZA.ospiti) {
+    if (ora - o.visto > OSPITE_SCADUTO) STANZA.ospiti.delete(tok);
+  }
+}
+
+function nuovaStanza() {
+  CODE = nuovoCodice();
+  STANZA.ospiti.clear();
+  STANZA.espulsi.clear();
+  STANZA.chiusa = false;
+  console.log(`\n  🔑 Nuova stanza. Codice: ${CODE}\n`);
+}
+
+/** Legge il token dai cookie (identifica un ospite fra un click e l'altro). */
+function tokenDi(req) {
+  const c = req.headers.cookie || '';
+  const m = /(?:^|;\s*)tk=([A-Za-z0-9]+)/.exec(c);
+  return m ? m[1] : null;
+}
+
+/** Corpo JSON piccolo (nickname e poco altro). */
+async function leggiJson(req) {
+  let n = 0; const parti = [];
+  for await (const c of req) {
+    n += c.length;
+    if (n > 4096) throw new Error('troppo grande');
+    parti.push(c);
+  }
+  try { return JSON.parse(Buffer.concat(parti).toString('utf8')); } catch { return {}; }
+}
+
+/** Nickname ripulito: niente HTML, niente righe, lunghezza sensata. */
+function pulisciNick(s) {
+  return String(s || '').replace(/[<>&"'\r\n\t]/g, '').trim().slice(0, 20);
+}
+
+/** Richiesta che arriva da questo stesso computer? */
+function isLocal(req) {
+  const a = req.socket.remoteAddress || '';
+  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+}
+
+/** Chi bussa ha diritto di entrare? */
+function authorized(req, url) {
+  if (isLocal(req)) return true;                       // il tuo PC: sempre
+  // Espulso: non rientra, nemmeno col link giusto. Blocchiamo sia il suo
+  // token sia il suo indirizzo, cosi' non basta ripulire i cookie.
+  const tok = tokenDi(req);
+  if (tok && STANZA.espulsi.has(tok)) return false;
+  if (STANZA.espulsi.has(req.socket.remoteAddress || '')) return false;
+  /* STANZA CHIUSA: passa solo chi era gia' dentro (ha un token nell'elenco).
+     Il codice e il link non bastano piu': nessun nuovo ingresso. Chi sta
+     giocando non se ne accorge nemmeno, la sua partita non si interrompe. */
+  if (STANZA.chiusa) return !!(tok && STANZA.ospiti.has(tok));
+  if (url.searchParams.get('code') === CODE) return true;
+  const cookie = req.headers.cookie || '';
+  return cookie.split(';').some(c => c.trim() === 'ol=' + CODE);
+}
+
+/* Pagina del codice: volutamente spoglia. Non nomina giochi, non dice quanti
+   ce ne sono, non rivela se il codice inserito e' "quasi" giusto. */
+const LOGIN_PAGE = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Game Online</title>
+<style>body{background:#16171a;color:#e8e9ec;font:15px/1.6 system-ui,sans-serif;display:flex;
+align-items:center;justify-content:center;height:100vh;margin:0}
+form{background:#1f2124;border:1px solid #33363c;border-radius:12px;padding:28px;width:300px;text-align:center}
+h1{font-size:18px;margin:0 0 6px}p{color:#9aa0a8;font-size:13px;margin:0 0 18px}
+input{width:100%;background:#282b30;border:1px solid #33363c;border-radius:8px;color:#e8e9ec;
+padding:11px;font:600 17px/1 inherit;letter-spacing:4px;text-align:center;text-transform:uppercase}
+button{width:100%;margin-top:12px;background:#4a9eff;color:#fff;border:0;border-radius:8px;
+padding:11px;font:600 14px inherit;cursor:pointer}</style></head><body>
+<form method="GET"><h1>Game Online</h1><p>Enter the access code</p>
+<input name="code" maxlength="12" autofocus autocomplete="off" spellcheck="false">
+<button type="submit">Enter</button></form></body></html>`;
 
 const MIME = {
   '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8',
@@ -48,6 +178,32 @@ const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     let rel = decodeURIComponent(url.pathname);
     if (rel === '/' || rel === '') rel = '/index.html';
+
+    /* PORTA D'INGRESSO. Prima di ogni altra cosa: chi non e' autorizzato vede
+       solo la richiesta del codice, mai un contenuto e mai un messaggio che
+       riveli cosa c'e' dietro. */
+    if (!authorized(req, url)) {
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.writeHead(401).end(LOGIN_PAGE);
+      return;
+    }
+
+    // Codice giusto arrivato nel link: lo ricordiamo e ripuliamo l'indirizzo,
+    // cosi' non resta scritto nella barra del browser.
+    if (!isLocal(req) && url.searchParams.get('code') === CODE) {
+      url.searchParams.delete('code');
+      const pulito = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams : '');
+      res.setHeader('Set-Cookie', `ol=${CODE}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
+      res.writeHead(302, { Location: pulito }).end();
+      return;
+    }
+
+    /* File nascosti (.git, .gitignore, .vscode...): non esistono, per chi
+       chiede. Rispondiamo 404 e non 403: un 403 confermerebbe che ci sono. */
+    if (rel.split('/').some(p => p.startsWith('.'))) {
+      res.writeHead(404).end('Not found'); return;
+    }
 
     // Elenco dei giochi in data/roms. Per ogni cartella scegliamo il file da
     // avviare: il .cue se c'è (gestisce le tracce multiple), altrimenti il
@@ -118,6 +274,134 @@ const server = createServer(async (req, res) => {
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.setHeader('Cache-Control', 'no-store');
       res.writeHead(200).end(JSON.stringify(out));
+      return;
+    }
+
+    /* Dati di rete: servono alla pagina per costruire il link d'invito.
+       Se apri il sito su "localhost", quel link sarebbe inutile per il tuo
+       amico: qui gli diciamo qual e' l'indirizzo giusto da mandargli. */
+    if (rel === '/api/net') {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      // Indirizzi e codice d'accesso li vede SOLO il tuo computer: sono i dati
+      // che servono a creare l'invito, non a usarlo.
+      if (!isLocal(req)) { res.writeHead(200).end(JSON.stringify({ ospite: true })); return; }
+      const ips = lanAddresses();
+      res.writeHead(200).end(JSON.stringify({
+        lan: ips[0] || null,
+        tutti: ips,
+        porta: Number(PORT),
+        netplay: NETPLAY,
+        codice: CODE,
+        aperto: HOST === '0.0.0.0',
+      }));
+      return;
+    }
+
+    /* ---- LA STANZA: chi c'e', chi comanda, chi puo' giocare -------------- */
+    if (rel.startsWith('/api/room')) {
+      const host = isLocal(req);
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      const rispondi = (o) => res.writeHead(200).end(JSON.stringify(o));
+      potaOspiti();
+
+      // Entra in stanza con un nickname. Da qui in poi e' riconoscibile.
+      if (rel === '/api/room/join' && req.method === 'POST') {
+        const body = await leggiJson(req);
+        const nick = pulisciNick(body.nick) || 'Ospite';
+        if (host) { STANZA.hostNick = nick; return rispondi({ ok: true, host: true }); }
+        let tok = tokenDi(req);
+        if (!tok || !/^[A-Za-z0-9]{8,}$/.test(tok)) {
+          tok = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+          res.setHeader('Set-Cookie', `tk=${tok}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
+        }
+        if (STANZA.espulsi.has(tok)) return rispondi({ espulso: true });
+        const gia = STANZA.ospiti.get(tok);
+        STANZA.ospiti.set(tok, {
+          nick,
+          ruolo: gia ? gia.ruolo : 'spettatore',   // si entra a guardare
+          ip: req.socket.remoteAddress || '',
+          visto: Date.now(),
+          entrato: gia ? gia.entrato : Date.now(),
+        });
+        console.log(`  👋 "${nick}" e' entrato nella stanza`);
+        return rispondi({ ok: true, ruolo: STANZA.ospiti.get(tok).ruolo });
+      }
+
+      // Chi c'e' adesso. Serve anche da battito: dice che sei ancora vivo.
+      if (rel === '/api/room' && req.method === 'GET') {
+        const tok = tokenDi(req);
+        if (!host) {
+          if (tok && STANZA.espulsi.has(tok)) return rispondi({ espulso: true });
+          const io = tok ? STANZA.ospiti.get(tok) : null;
+          if (io) io.visto = Date.now();
+          return rispondi({
+            host: false,
+            entrato: !!io,
+            ruolo: io ? io.ruolo : null,
+            chiusa: STANZA.chiusa,
+            hostNick: STANZA.hostNick,
+            // L'ospite vede i nomi, non i token: non deve poter espellere.
+            presenti: [...STANZA.ospiti.values()].map(o => ({ nick: o.nick, ruolo: o.ruolo })),
+          });
+        }
+        return rispondi({
+          host: true,
+          codice: CODE,
+          chiusa: STANZA.chiusa,
+          hostNick: STANZA.hostNick,
+          presenti: [...STANZA.ospiti.entries()].map(([t, o]) => ({
+            token: t, nick: o.nick, ruolo: o.ruolo, ip: o.ip,
+            da: Math.floor((Date.now() - o.entrato) / 1000),
+          })),
+          espulsi: STANZA.espulsi.size,
+        });
+      }
+
+      // Da qui in poi comanda solo l'host. Un ospite non deve nemmeno sapere
+      // che queste rotte esistono: 404.
+      if (!host) { res.writeHead(404).end('Not found'); return; }
+
+      if (rel === '/api/room/kick' && req.method === 'POST') {
+        const { token } = await leggiJson(req);
+        const o = STANZA.ospiti.get(token);
+        if (o) {
+          STANZA.espulsi.add(token);
+          if (o.ip) STANZA.espulsi.add(o.ip);    // niente rientri ripulendo i cookie
+          STANZA.ospiti.delete(token);
+          console.log(`  🚫 "${o.nick}" espulso dalla stanza`);
+        }
+        return rispondi({ ok: true });
+      }
+
+      if (rel === '/api/room/role' && req.method === 'POST') {
+        const { token, ruolo } = await leggiJson(req);
+        const o = STANZA.ospiti.get(token);
+        if (o && (ruolo === 'giocatore' || ruolo === 'spettatore')) {
+          o.ruolo = ruolo;
+          console.log(`  🎮 "${o.nick}" ora e' ${ruolo}`);
+        }
+        return rispondi({ ok: true });
+      }
+
+      // Chiude o riapre la stanza. Non tocca nessuno di quelli gia' dentro:
+      // il server continua a girare e le partite in corso proseguono.
+      if (rel === '/api/room/lock' && req.method === 'POST') {
+        const { chiusa } = await leggiJson(req);
+        STANZA.chiusa = !!chiusa;
+        console.log(STANZA.chiusa
+          ? `  🔒 Stanza chiusa: il link non fa entrare piu' nessuno (dentro restano in ${STANZA.ospiti.size})`
+          : `  🔓 Stanza riaperta: il link funziona di nuovo (codice ${CODE})`);
+        return rispondi({ ok: true, chiusa: STANZA.chiusa });
+      }
+
+      if (rel === '/api/room/new' && req.method === 'POST') {
+        nuovaStanza();
+        return rispondi({ ok: true, codice: CODE });
+      }
+
+      res.writeHead(404).end('Not found');
       return;
     }
 
@@ -198,6 +482,9 @@ const server = createServer(async (req, res) => {
       }
 
       if (req.method === 'POST') {
+        // Scrivere sul tuo disco puo' farlo solo il tuo computer. Un ospite
+        // gioca e basta: non lascia file sulla tua macchina.
+        if (!isLocal(req)) { res.writeHead(404).end('Not found'); return; }
         const chunks = [];
         let total = 0;
         for await (const c of req) {
@@ -221,12 +508,13 @@ const server = createServer(async (req, res) => {
     }
 
     // I file del progetto non vanno serviti come contenuto statico.
-    if (/^\/(server\.mjs|package(-lock)?\.json|.*\.bat)$/i.test(rel)) {
-      res.writeHead(403).end('Forbidden'); return;
+    // 404 e non 403: chi chiede non deve sapere che esistono.
+    if (/^\/(server\.mjs|package(-lock)?\.json|.*\.(bat|md|log))$/i.test(rel)) {
+      res.writeHead(404).end('Not found'); return;
     }
 
     const file = normalize(join(ROOT, rel));
-    if (!file.startsWith(ROOT)) { res.writeHead(403).end('Forbidden'); return; }
+    if (!file.startsWith(ROOT)) { res.writeHead(404).end('Not found'); return; }
 
     const info = await stat(file);
     if (!info.isFile()) { res.writeHead(404).end('Not found'); return; }
@@ -261,8 +549,25 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`\n  ✅ Game Online pronto →  http://localhost:${PORT}\n`);
-  console.log('  Trascina la ROM, scegli la console, premi Avvia.');
-  console.log('  Per chiudere: Ctrl+C\n');
+server.listen(PORT, HOST, () => {
+  const ips = lanAddresses();
+  console.log(`\n  ✅ Game Online pronto\n`);
+  console.log(`  Su questo PC   →  http://localhost:${PORT}`);
+  if (HOST === '0.0.0.0' && ips.length) {
+    console.log(`  Per gli amici  →  http://${ips[0]}:${PORT}`);
+    if (ips.length > 1) console.log(`     (altri indirizzi: ${ips.slice(1).join(', ')})`);
+    console.log(`\n  🔑 Codice d'accesso:  ${CODE}`);
+    console.log('  Chi arriva dalla rete deve inserirlo. Il link d\'invito');
+    console.log('  che trovi nella pagina lo contiene gia\'.');
+  } else if (HOST === '0.0.0.0') {
+    console.log('  (nessuna rete locale rilevata: sei offline o solo su questo PC)');
+    console.log(`\n  🔑 Codice d'accesso:  ${CODE}`);
+  } else {
+    console.log('\n  🔒 Chiuso: raggiungibile SOLO da questo computer.');
+    console.log('     Per invitare qualcuno usa  "APRI ALLA RETE.bat"');
+  }
+  console.log(NETPLAY
+    ? `\n  🎮 Multiplayer attivo tramite  ${NETPLAY}`
+    : '\n  Multiplayer non attivo: manca il server netplay (vedi AVVIA MULTIPLAYER.bat)');
+  console.log('\n  Per chiudere: Ctrl+C\n');
 });

@@ -24,6 +24,10 @@ echo    Per chiudere: chiudi questa finestra.
 echo  ============================================================
 echo.
 
+REM Se il server multiplayer gira su questo stesso PC, lo colleghiamo da solo.
+REM Se non e' avviato non succede nulla: si gioca normalmente in singolo.
+if "%NETPLAY%"=="" set NETPLAY=http://localhost:3000
+
 start "" /min cmd /c "timeout /t 3 /nobreak >nul & start "" http://localhost:5173"
 node server.mjs
 echo.
