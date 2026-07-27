@@ -81,7 +81,7 @@ select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(74,158,255,.15
     </svg></span>
     <div>
       <h1>Game Online</h1>
-      <p><span data-i18n="tagline">Emulatore multiconsole nel browser — basato su EmulatorJS</span> · <b id="ver">build 30</b></p>
+      <p><span data-i18n="tagline">Emulatore multiconsole nel browser — basato su EmulatorJS</span> · <b id="ver">build 31</b></p>
     </div>
     <select id="lang" title="Lingua / Language" style="width:auto;margin-left:auto;padding:6px 10px;font-size:12.5px"></select>
   </header>
@@ -725,6 +725,13 @@ async function avviaPartita() {
   if (tattile && !PAD_STANDARD) {
     const d = disposizioneComandi(sys.core);
     if (d) window.EJS_VirtualGamepadSettings = d;
+  }
+
+  // Il Nintendo DS si gioca col pennino: il tocco serve sempre, lo accendiamo
+  // da soli. Sulle altre console resta una scelta tua (pulsante 🖱 Tocco).
+  if (sys.core === 'nds' && !TOCCO_SCELTO) {
+    TOCCO = true;
+    try { localStorage.setItem('gameonline-tocco', '1'); } catch (e) {}
   }
 
   /* MULTIPLAYER. EJS_gameID deve essere lo STESSO numero sui due computer:
@@ -1615,21 +1622,25 @@ function applicaScalaPad() {
   // contenga "virtualgamepad", senza dipendere da un nome esatto.
   document.querySelectorAll('#game *').forEach(el => {
     if (!/virtualgamepad/i.test(classeDi(el))) return;
-    el.style.transformOrigin = 'bottom center';
-    el.style.transform = 'scale(' + k + ')';
+
+    /* Il pannello NON va ingrandito tutto insieme: crescendo, i tasti ai lati
+       finirebbero fuori dallo schermo. Ingrandiamo ogni tasto per conto suo,
+       attorno al proprio centro: diventa piu' grande restando dov'e'. */
+    el.style.transform = '';
 
     /* IL PUNTO CHIAVE PER IL TOCCO (Nintendo DS e simili).
-       Il pannello dei comandi copre TUTTA l'area del gioco con un rettangolo
-       trasparente: il dito lo tocca e il canvas sotto non riceve niente, per
-       questo toccare lo schermo "va a vuoto".
-       Qui rendiamo il pannello trasparente ai tocchi e riaccendiamo solo i
-       pulsanti veri: cosi' il dito passa e arriva al gioco. */
+       Il pannello copre TUTTA l'area del gioco con un rettangolo trasparente:
+       il dito tocca quello e il canvas sotto non riceve niente. Lo rendiamo
+       trasparente ai tocchi e riaccendiamo solo i tasti veri. */
     el.style.pointerEvents = 'none';
+
     el.querySelectorAll('*').forEach(figlio => {
       const cf = classeDi(figlio);
-      if (/button|dpad|zone|joystick|nipple/i.test(cf) || figlio.tagName === 'BUTTON') {
-        figlio.style.pointerEvents = 'auto';
-      }
+      const eTasto = /button|dpad|zone|joystick|nipple/i.test(cf) || figlio.tagName === 'BUTTON';
+      if (!eTasto) return;
+      figlio.style.pointerEvents = 'auto';
+      figlio.style.transformOrigin = 'center center';
+      figlio.style.transform = 'scale(' + k + ')';
     });
   });
   const pad = $('share-pad');
@@ -1661,8 +1672,12 @@ setInterval(() => {
    e non succede nulla.
    Qui traduciamo noi tocco -> mouse. E' un interruttore apposta: se su un
    gioco il tocco gia' funziona, accenderlo darebbe il comando due volte. */
-let TOCCO = false;
-try { TOCCO = localStorage.getItem('gameonline-tocco') === '1'; } catch (e) {}
+let TOCCO = false, TOCCO_SCELTO = false;
+try {
+  const v = localStorage.getItem('gameonline-tocco');
+  TOCCO = v === '1';
+  TOCCO_SCELTO = (v !== null);     // l'utente ha gia' deciso: rispettiamo la sua scelta
+} catch (e) {}
 
 /* Via di fuga: se la disposizione su misura risultasse peggiore di quella
    originale, si torna a quella di EmulatorJS scrivendo nella barra indirizzi
@@ -1674,24 +1689,43 @@ try {
 } catch (e) {}
 
 function collegaTocco() {
+  const cont = $('game');
   const c = canvasGioco();
-  if (!c || c.dataset.ponte === '1') return;
-  c.dataset.ponte = '1';
+  if (!cont || !c || cont.dataset.ponte === '1') return;
+  cont.dataset.ponte = '1';
 
-  const punta = (e) => (e.changedTouches && e.changedTouches[0]) || e;
-  const manda = (tipo, e) => {
-    if (!TOCCO) return;
-    const p = punta(e);
-    c.dispatchEvent(new MouseEvent(tipo, {
-      bubbles: true, cancelable: true,
-      clientX: p.clientX, clientY: p.clientY,
-      button: 0, buttons: tipo === 'mouseup' ? 0 : 1,
-    }));
+  /* Ascoltiamo sul CONTENITORE, non sul canvas: se qualcosa copre il canvas
+     (i comandi a schermo) il canvas non riceverebbe mai il tocco e il ponte
+     non partirebbe nemmeno. Qui intercettiamo prima, in fase di cattura. */
+  const suUnTasto = (t) => {
+    for (let el = t; el && el !== cont; el = el.parentElement) {
+      if (el.tagName === 'BUTTON') return true;
+      if (/button|dpad|zone|joystick|nipple/i.test(classeDi(el))) return true;
+    }
+    return false;
   };
 
-  c.addEventListener('touchstart', (e) => { manda('mousedown', e); }, { passive: true });
-  c.addEventListener('touchmove',  (e) => { manda('mousemove', e); }, { passive: true });
-  c.addEventListener('touchend',   (e) => { manda('mouseup', e); },   { passive: true });
+  const manda = (tipo, e) => {
+    if (!TOCCO) return;
+    const p = (e.changedTouches && e.changedTouches[0]) || e;
+    if (!p) return;
+    if (suUnTasto(e.target)) return;          // stai premendo un tasto, non lo schermo
+    const opz = {
+      bubbles: true, cancelable: true, view: window,
+      clientX: p.clientX, clientY: p.clientY,
+      button: 0, buttons: tipo === 'mouseup' ? 0 : 1,
+    };
+    // Alcuni core ascoltano il mouse, altri il puntatore: mandiamo entrambi.
+    c.dispatchEvent(new MouseEvent(tipo, opz));
+    const pt = { mousedown: 'pointerdown', mousemove: 'pointermove', mouseup: 'pointerup' }[tipo];
+    if (pt && window.PointerEvent) {
+      c.dispatchEvent(new PointerEvent(pt, Object.assign({ pointerType: 'mouse', isPrimary: true, pointerId: 1 }, opz)));
+    }
+  };
+
+  cont.addEventListener('touchstart', (e) => manda('mousedown', e), { capture: true, passive: true });
+  cont.addEventListener('touchmove',  (e) => manda('mousemove', e), { capture: true, passive: true });
+  cont.addEventListener('touchend',   (e) => manda('mouseup', e),   { capture: true, passive: true });
 }
 
 function aggiornaTastoTocco() {
