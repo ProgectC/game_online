@@ -81,7 +81,7 @@ select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(74,158,255,.15
     </svg></span>
     <div>
       <h1>Game Online</h1>
-      <p><span data-i18n="tagline">Emulatore multiconsole nel browser — basato su EmulatorJS</span> · <b id="ver">build 33</b></p>
+      <p><span data-i18n="tagline">Emulatore multiconsole nel browser — basato su EmulatorJS</span> · <b id="ver">build 34</b></p>
     </div>
     <select id="lang" title="Lingua / Language" style="width:auto;margin-left:auto;padding:6px 10px;font-size:12.5px"></select>
   </header>
@@ -220,6 +220,7 @@ select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(74,158,255,.15
     <button class="btn ghost" id="diagbtn" style="padding:6px 12px;font-size:12px" data-i18n="details">ℹ Dettagli</button>
   </div>
   <pre id="diag" hidden style="margin:0;padding:10px 14px;background:#0d0e10;border-bottom:1px solid var(--line);color:#9ccdff;font-size:12px;white-space:pre-wrap;max-height:30vh;overflow:auto"></pre>
+  <div id="tdebug" style="padding:4px 8px;background:#0d0e10;color:#57c07d;font:11px/1.4 monospace;white-space:pre-wrap"></div>
   <div id="game"></div>
 </div>
 
@@ -730,9 +731,20 @@ async function avviaPartita() {
 
   // Il Nintendo DS si gioca col pennino: il tocco serve sempre, lo accendiamo
   // da soli. Sulle altre console resta una scelta tua (pulsante 🖱 Tocco).
-  if (sys.core === 'nds' && !TOCCO_SCELTO) {
-    TOCCO = true;
-    try { localStorage.setItem('gameonline-tocco', '1'); } catch (e) {}
+  if (sys.core === 'nds') {
+    if (!TOCCO_SCELTO) {
+      TOCCO = true;
+      try { localStorage.setItem('gameonline-tocco', '1'); } catch (e) {}
+    }
+    /* Diciamo al core DS di accettare il pennino dal puntatore. I nomi delle
+       opzioni cambiano fra melonDS e DeSmuME: le passiamo tutte, quelle che
+       non riguardano il core in uso vengono semplicemente ignorate. */
+    window.EJS_defaultOptions = Object.assign({
+      'melonds_touch_mode': 'Touch',
+      'melonds_screen_layout': 'Top/Bottom',
+      'desmume_pointer_device_l': 'emulated',
+      'desmume_pointer_type': 'touch',
+    }, window.EJS_defaultOptions || {});
   }
 
   /* MULTIPLAYER. EJS_gameID deve essere lo STESSO numero sui due computer:
@@ -1677,7 +1689,10 @@ setInterval(() => {
   if ($('player').hidden && $('share').hidden) return;
   applicaScalaPad();
   collegaTocco();          // il canvas nasce dopo l'avvio: lo agganciamo appena c'e'
+  menuFuoriDaiPiedi();     // col tocco attivo, il menu non deve aprirsi da solo
   aggiornaTastoTocco();
+  const td = $('tdebug');
+  if (td && !TDEBUG) td.style.display = 'none';
 }, 2000);
 
 /* ---------- TOCCO SULLO SCHERMO DEL GIOCO ---------------------------------
@@ -1687,6 +1702,12 @@ setInterval(() => {
    e non succede nulla.
    Qui traduciamo noi tocco -> mouse. E' un interruttore apposta: se su un
    gioco il tocco gia' funziona, accenderlo darebbe il comando due volte. */
+/* Diagnostica del tocco: aggiungi ?tdebug=1 all'indirizzo e compare una
+   riga in alto che dice dove tocchi e cosa stai toccando. Serve a capire
+   senza collegare il telefono al PC. */
+let TDEBUG = false;
+try { TDEBUG = new URLSearchParams(location.search).get('tdebug') === '1'; } catch (e) {}
+
 let TOCCO = false, TOCCO_SCELTO = false;
 try {
   const v = localStorage.getItem('gameonline-tocco');
@@ -1720,35 +1741,43 @@ function collegaTocco() {
     return false;
   };
 
-  const manda = (tipo, e) => {
-    if (!TOCCO) return;
-    const p = (e.changedTouches && e.changedTouches[0]) || e;
-    if (!p) return;
-    if (suUnTasto(e.target)) return;          // stai premendo un tasto, non lo schermo
-
-    /* Fermiamo il tocco QUI. Senza questo arriva anche a EmulatorJS, che lo
-       legge come "apri il menu": toccavi lo schermo del gioco e si apriva
-       Restart / Pause / Save State invece di succedere qualcosa nel gioco. */
-    e.stopPropagation();
-
-    const opz = {
-      /* bubbles: false -> l'evento resta sul canvas e lo riceve solo il gioco.
-         Se salisse, riaprirebbe il menu esattamente come prima. */
-      bubbles: false, cancelable: true, view: window,
-      clientX: p.clientX, clientY: p.clientY,
-      button: 0, buttons: tipo === 'mouseup' ? 0 : 1,
-    };
-    // Alcuni core ascoltano il mouse, altri il puntatore: mandiamo entrambi.
-    c.dispatchEvent(new MouseEvent(tipo, opz));
-    const pt = { mousedown: 'pointerdown', mousemove: 'pointermove', mouseup: 'pointerup' }[tipo];
-    if (pt && window.PointerEvent) {
-      c.dispatchEvent(new PointerEvent(pt, Object.assign({ pointerType: 'mouse', isPrimary: true, pointerId: 1 }, opz)));
-    }
+  /* COSA ABBIAMO IMPARATO
+     Toccando lo schermo si apriva il menu di EmulatorJS: quindi il tocco vero
+     ARRIVA gia' dove deve. Il problema non era farlo arrivare, ma che se lo
+     prendeva il menu. Quindi ora NON tocchiamo piu' il tocco: lo lasciamo
+     passare intatto verso il gioco, e disattiviamo l'apertura del menu.
+     (Il menu resta raggiungibile dai nostri pulsanti in alto.) */
+  const diag = (e) => {
+    if (!TDEBUG) return;
+    const p = (e.changedTouches && e.changedTouches[0]) || {};
+    const r = c.getBoundingClientRect();
+    const box = $('tdebug');
+    if (box) box.textContent =
+      e.type + '  dito: ' + Math.round(p.clientX) + ',' + Math.round(p.clientY) +
+      '  canvas: ' + Math.round(r.left) + ',' + Math.round(r.top) + ' ' +
+      Math.round(r.width) + 'x' + Math.round(r.height) +
+      '  su: ' + (e.target && (e.target.tagName + '.' + classeDi(e.target)).slice(0, 40)) +
+      '  tasto: ' + (suUnTasto(e.target) ? 'si' : 'no');
   };
+  cont.addEventListener('touchstart', diag, { capture: true, passive: true });
+  cont.addEventListener('touchend',   diag, { capture: true, passive: true });
+}
 
-  cont.addEventListener('touchstart', (e) => manda('mousedown', e), { capture: true, passive: false });
-  cont.addEventListener('touchmove',  (e) => manda('mousemove', e), { capture: true, passive: false });
-  cont.addEventListener('touchend',   (e) => manda('mouseup', e),   { capture: true, passive: false });
+/** Spegne l'apertura automatica del menu di EmulatorJS quando tocchi lo
+    schermo. Serve sul Nintendo DS: il pennino non deve aprire i menu. */
+function menuFuoriDaiPiedi() {
+  const e = window.EJS_emulator;
+  if (!e || !e.menu) return;
+  if (TOCCO) {
+    if (!e.menu.__apriVero) {
+      e.menu.__apriVero = e.menu.open;
+      e.menu.open = function () { };          // il tocco non apre piu' niente
+    }
+    if (typeof e.menu.close === 'function') { try { e.menu.close(); } catch (x) {} }
+  } else if (e.menu.__apriVero) {
+    e.menu.open = e.menu.__apriVero;
+    delete e.menu.__apriVero;
+  }
 }
 
 function aggiornaTastoTocco() {
