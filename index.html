@@ -81,7 +81,7 @@ select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(74,158,255,.15
     </svg></span>
     <div>
       <h1>Game Online</h1>
-      <p><span data-i18n="tagline">Emulatore multiconsole nel browser — basato su EmulatorJS</span> · <b id="ver">build 28</b></p>
+      <p><span data-i18n="tagline">Emulatore multiconsole nel browser — basato su EmulatorJS</span> · <b id="ver">build 30</b></p>
     </div>
     <select id="lang" title="Lingua / Language" style="width:auto;margin-left:auto;padding:6px 10px;font-size:12.5px"></select>
   </header>
@@ -513,6 +513,81 @@ function showRom(f) {
   refresh();
 }
 
+/* ---------- COMANDI A SCHERMO: disposizione per telefono ------------------
+   La disposizione predefinita di EmulatorJS e' pensata per lo schermo grande:
+   sul telefono i tasti risultano piccoli e mal messi. Qui la rifacciamo,
+   console per console, con pulsanti grandi e nelle posizioni classiche.
+
+   I numeri sono quelli del "retropad", uguali per tutti i core:
+     B=0  Y=1  Select=2  Start=3  Su=4  Giu=5  Sx=6  Dx=7
+     A=8  X=9  L=10  R=11  L2=12  R2=13                                       */
+const DPAD   = { type: 'dpad', location: 'left', left: '50%', top: '50%',
+                 joystickInput: false, inputValues: [4, 5, 6, 7] };
+const LEVA   = { type: 'zone', location: 'left', left: '50%', top: '50%',
+                 joystickInput: true, inputValues: [19, 18, 17, 16], color: 'blue' };
+
+function tasto(text, id, left, top, input, fontSize) {
+  return { type: 'button', text, id, location: 'right', left, top,
+           input_value: input, fontSize: fontSize || 30, bold: true };
+}
+function spalla(text, id, left, input) {
+  return { type: 'button', text, id, location: 'top', left,
+           input_value: input, fontSize: 17, block: true };
+}
+const START  = { type: 'button', text: 'Start',  id: 'start',  location: 'center',
+                 left: 60, fontSize: 15, block: true, input_value: 3 };
+const SELECT = { type: 'button', text: 'Select', id: 'select', location: 'center',
+                 left: -5, fontSize: 15, block: true, input_value: 2 };
+
+/** Quattro tasti a rombo, come su SNES / PlayStation / DS. */
+function rombo(nomi) {
+  return [
+    tasto(nomi[0], 'b_alto',  40,  0, nomi[4]),
+    tasto(nomi[1], 'b_sx',     0, 40, nomi[5]),
+    tasto(nomi[2], 'b_dx',    81, 40, nomi[6]),
+    tasto(nomi[3], 'b_basso', 40, 80, nomi[7]),
+  ];
+}
+
+function disposizioneComandi(core) {
+  const due = [tasto('B', 'b', 0, 45, 0, 32), tasto('A', 'a', 78, 20, 8, 32)];
+
+  switch (core) {
+    case 'gb': case 'nes': case 'segaMS': case 'segaGG': case 'atari2600':
+    case 'atari7800': case 'lynx': case 'vb':
+      return [DPAD, ...due, START, SELECT];
+
+    case 'snes':
+      return [DPAD, ...rombo(['X', 'Y', 'A', 'B', 9, 1, 8, 0]),
+              spalla('L', 'l', 20, 10), spalla('R', 'r', 80, 11), START, SELECT];
+
+    case 'gba':
+      return [DPAD, ...due,
+              spalla('L', 'l', 20, 10), spalla('R', 'r', 80, 11), START, SELECT];
+
+    case 'segaMD': case 'sega32x':
+      return [DPAD, tasto('A', 'a', 0, 45, 0, 30), tasto('B', 'b', 55, 30, 8, 30),
+              tasto('C', 'c', 110, 15, 9, 30), START];
+
+    case 'nds':
+      // Su DS meno tasti: lo schermo serve per il pennino.
+      return [DPAD, ...rombo(['X', 'Y', 'A', 'B', 9, 1, 8, 0]),
+              spalla('L', 'l', 20, 10), spalla('R', 'r', 80, 11), START, SELECT];
+
+    case 'n64':
+      return [LEVA, tasto('A', 'a', 0, 45, 0, 30), tasto('B', 'b', 70, 20, 8, 30),
+              spalla('L', 'l', 12, 10), spalla('Z', 'z', 50, 12), spalla('R', 'r', 88, 11), START];
+
+    case 'pcsx_rearmed': case 'mednafen_psx_hw': case 'psp':
+      return [DPAD, ...rombo(['△', '□', '○', '✕', 9, 1, 8, 0]),
+              spalla('L1', 'l1', 15, 10), spalla('L2', 'l2', 38, 12),
+              spalla('R2', 'r2', 62, 13), spalla('R1', 'r1', 85, 11), START, SELECT];
+
+    default:
+      return null;     // console insolita: lasciamo fare a EmulatorJS
+  }
+}
+
 /** I core a disco (PlayStation, Sega CD, Saturn, 3DO...) hanno regole loro:
  *  .cue/.bin, tracce multiple, BIOS. Per le cartucce (GBA, NES, SNES...)
  *  niente di tutto questo vale, e mostrarlo confonde e basta. */
@@ -640,6 +715,17 @@ async function avviaPartita() {
   window.EJS_gameUrl       = libFile ? libFile.url : romFile;
   if (biosUrl) window.EJS_biosUrl = biosUrl;       // il BIOS resta SEMPRE un URL
   window.EJS_startOnLoaded = true;
+
+  /* Comandi a schermo su misura per il telefono. Li impostiamo solo sui
+     dispositivi tattili: su un PC col pad o la tastiera non servono, e
+     cambiarli senza motivo darebbe fastidio. */
+  const tattile = ('ontouchstart' in window) ||
+                  (navigator.maxTouchPoints > 0) ||
+                  (window.matchMedia && window.matchMedia('(any-pointer:coarse)').matches);
+  if (tattile && !PAD_STANDARD) {
+    const d = disposizioneComandi(sys.core);
+    if (d) window.EJS_VirtualGamepadSettings = d;
+  }
 
   /* MULTIPLAYER. EJS_gameID deve essere lo STESSO numero sui due computer:
      lo ricaviamo dal gioco, non a caso. Senza server netplay il pulsante
@@ -936,7 +1022,11 @@ async function avviaModalitaOnline() {
     /* OSPITE: niente libreria, niente file, niente console. Solo nome e
        poi lo schermo dell'host. Non ha accesso a nulla del suo PC. */
     $('mp-card').hidden = true;
-    document.querySelectorAll('.card').forEach(c => { if (c.id !== 'mp-card') c.hidden = true; });
+    /* Nascondiamo SOLO le sezioni della pagina principale (figlie dirette di
+       #home). Attenzione: il riquadro del nome usa la stessa classe "card",
+       ma sta fuori da #home: prendendolo dentro la selezione restava lo
+       sfondo nero e nessun riquadro. */
+    document.querySelectorAll('#home > .card').forEach(c => { if (c.id !== 'mp-card') c.hidden = true; });
     if ($('go')) $('go').hidden = true;
     $('nick-gate').hidden = false;
     const entra = async () => {
@@ -1514,15 +1604,33 @@ $('back').onclick = async () => {
 let PAD_SCALA = 1;
 try { PAD_SCALA = parseFloat(localStorage.getItem('gameonline-pad')) || 1; } catch (e) {}
 
+function classeDi(el) {
+  const c = (el.className && el.className.baseVal !== undefined ? el.className.baseVal : el.className);
+  return (typeof c === 'string') ? c : '';
+}
+
 function applicaScalaPad() {
   const k = Math.min(2.2, Math.max(0.7, PAD_SCALA));
   // I nomi delle classi cambiano fra le versioni: prendiamo qualsiasi cosa
   // contenga "virtualgamepad", senza dipendere da un nome esatto.
   document.querySelectorAll('#game *').forEach(el => {
-    const c = (el.className && el.className.baseVal !== undefined ? el.className.baseVal : el.className) || '';
-    if (typeof c !== 'string' || !/virtualgamepad/i.test(c)) return;
+    if (!/virtualgamepad/i.test(classeDi(el))) return;
     el.style.transformOrigin = 'bottom center';
     el.style.transform = 'scale(' + k + ')';
+
+    /* IL PUNTO CHIAVE PER IL TOCCO (Nintendo DS e simili).
+       Il pannello dei comandi copre TUTTA l'area del gioco con un rettangolo
+       trasparente: il dito lo tocca e il canvas sotto non riceve niente, per
+       questo toccare lo schermo "va a vuoto".
+       Qui rendiamo il pannello trasparente ai tocchi e riaccendiamo solo i
+       pulsanti veri: cosi' il dito passa e arriva al gioco. */
+    el.style.pointerEvents = 'none';
+    el.querySelectorAll('*').forEach(figlio => {
+      const cf = classeDi(figlio);
+      if (/button|dpad|zone|joystick|nipple/i.test(cf) || figlio.tagName === 'BUTTON') {
+        figlio.style.pointerEvents = 'auto';
+      }
+    });
   });
   const pad = $('share-pad');
   if (pad) { pad.style.transformOrigin = 'bottom center'; pad.style.transform = 'scale(' + k + ')'; }
@@ -1555,6 +1663,15 @@ setInterval(() => {
    gioco il tocco gia' funziona, accenderlo darebbe il comando due volte. */
 let TOCCO = false;
 try { TOCCO = localStorage.getItem('gameonline-tocco') === '1'; } catch (e) {}
+
+/* Via di fuga: se la disposizione su misura risultasse peggiore di quella
+   originale, si torna a quella di EmulatorJS scrivendo nella barra indirizzi
+   ...?padstd=1  (oppure dalla console: localStorage.gameonline-padstd = "1") */
+let PAD_STANDARD = false;
+try {
+  if (new URLSearchParams(location.search).get('padstd') === '1') localStorage.setItem('gameonline-padstd', '1');
+  PAD_STANDARD = localStorage.getItem('gameonline-padstd') === '1';
+} catch (e) {}
 
 function collegaTocco() {
   const c = canvasGioco();
