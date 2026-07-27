@@ -1,0 +1,9 @@
+{
+  "name": "psonline",
+  "version": "1.0.0",
+  "description": "Emulatore multiconsole nel browser, basato su EmulatorJS.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}

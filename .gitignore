@@ -1,0 +1,15 @@
+# --- Dati personali e materiale protetto: MAI su GitHub -------------------
+# data/ contiene le ROM dei giochi (centinaia di MB l'una), i BIOS PlayStation
+# (firmware Sony, protetto da copyright), le copertine e i salvataggi.
+# GitHub rifiuta i file oltre 100 MB e questo materiale non va comunque
+# pubblicato. La cartella resta sul tuo PC: viene solo ignorata da git.
+data/
+
+# Dipendenze: si riscaricano con "npm install", inutile versionarle.
+node_modules/
+
+# File di servizio di Windows / editor
+Thumbs.db
+desktop.ini
+.vscode/
+*.log

@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Game Online — Multi-console emulator</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><rect x='3' y='14' width='42' height='24' rx='10' fill='%23282b30' stroke='%234a9eff' stroke-width='2'/><rect x='12' y='23.2' width='9' height='2.6' rx='1.3' fill='%234a9eff'/><rect x='15.2' y='20' width='2.6' height='9' rx='1.3' fill='%234a9eff'/><circle cx='31.5' cy='22.5' r='2.4' fill='%2357c07d'/><circle cx='36' cy='28' r='2.4' fill='%23e0a33e'/></svg>">
+<style>
+:root{--bg:#16171a;--panel:#1f2124;--panel2:#282b30;--line:#33363c;--text:#e8e9ec;--dim:#9aa0a8;--faint:#6b7078;--accent:#4a9eff;--accent2:#2f7ee0;--ok:#57c07d;--warn:#e0a33e;--danger:#ef5350}
+*{box-sizing:border-box}[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.5 "Segoe UI",system-ui,sans-serif}
+a{color:var(--accent)}
+code{background:#000;padding:1px 5px;border-radius:4px;color:var(--accent);font-size:.9em}
+
+.wrap{max-width:900px;margin:0 auto;padding:28px 20px 60px}
+header{display:flex;align-items:center;gap:12px;margin-bottom:26px}
+header .logo{font-size:30px}
+header h1{margin:0;font-size:21px;font-weight:650}
+header p{margin:2px 0 0;color:var(--faint);font-size:12.5px}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+.lbl{display:block;font-size:11.5px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.help{color:var(--faint);font-size:12px;margin:8px 0 0;line-height:1.55}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+select,input[type=text]{width:100%;background:#111214;border:1px solid var(--line);color:var(--text);padding:10px 12px;border-radius:8px;font:inherit;outline:none}
+select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(74,158,255,.15)}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;background:var(--accent);color:#fff;border:1px solid transparent;border-radius:8px;padding:10px 16px;font:600 13px inherit;cursor:pointer;font-family:inherit}
+.btn:hover:not(:disabled){background:var(--accent2)}
+.btn:disabled{background:#3a3d43;color:var(--faint);cursor:default}
+.btn.ghost{background:var(--panel2);color:var(--text);border-color:var(--line)}
+.btn.ghost:hover{background:#33363c}
+.btn.big{width:100%;padding:13px;font-size:14px}
+
+.drop{border:2px dashed var(--line);border-radius:12px;padding:34px 20px;text-align:center;cursor:pointer;transition:.15s;background:#131417}
+.drop:hover,.drop.over{border-color:var(--accent);background:rgba(74,158,255,.07)}
+.drop .ic{font-size:38px;opacity:.6}
+.drop b{display:block;margin-top:10px;font-size:15px}
+.drop small{color:var(--faint)}
+
+.file{display:flex;align-items:center;gap:10px;background:#131417;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px}
+.file .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file .sz{color:var(--faint);font-size:12px}
+.file .x{background:none;border:none;color:var(--faint);cursor:pointer;font-size:14px}
+.file .x:hover{color:var(--danger)}
+.file.ok{border-color:rgba(87,192,125,.4);background:rgba(87,192,125,.07)}
+
+.note{border-radius:8px;padding:11px 13px;font-size:12.5px;line-height:1.55;margin-top:12px}
+.note.warn{background:rgba(224,163,62,.1);border:1px solid rgba(224,163,62,.3);color:#f0c579}
+.note.info{background:rgba(74,158,255,.1);border:1px solid rgba(74,158,255,.3);color:#9ccdff}
+
+/* player a schermo intero */
+#player{position:fixed;inset:0;z-index:100;background:#000;display:flex;flex-direction:column}
+#bar{display:flex;align-items:center;gap:12px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+#bar .t{font-weight:600;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#game{flex:1;width:100%}
+</style>
+</head>
+<body>
+
+<div class="wrap" id="home">
+  <header>
+    <span class="logo" aria-hidden="true"><svg width="40" height="40" viewBox="0 0 48 48" fill="none">
+      <rect x="3" y="14" width="42" height="24" rx="10" fill="#282b30" stroke="#4a9eff" stroke-width="2"/>
+      <rect x="12" y="23.2" width="9" height="2.6" rx="1.3" fill="#4a9eff"/>
+      <rect x="15.2" y="20" width="2.6" height="9" rx="1.3" fill="#4a9eff"/>
+      <circle cx="31.5" cy="22.5" r="2.4" fill="#57c07d"/>
+      <circle cx="36" cy="28" r="2.4" fill="#e0a33e"/>
+    </svg></span>
+    <div>
+      <h1>Game Online</h1>
+      <p><span data-i18n="tagline">Emulatore multiconsole nel browser — basato su EmulatorJS</span> · <b id="ver">build 16</b></p>
+    </div>
+    <select id="lang" title="Lingua / Language" style="width:auto;margin-left:auto;padding:6px 10px;font-size:12.5px"></select>
+  </header>
+
+  <div class="note warn" id="oldserver" hidden style="margin-bottom:16px" data-i18n-html="oldserver">
+    <b>⚠ Il server in esecuzione è quello vecchio.</b><br>
+    Le rotte <code>/api/roms</code> e <code>/api/bios</code> non rispondono: la libreria
+    resta vuota e il BIOS non può essere caricato.<br>
+    <b>Chiudi la finestra nera del server e rilancia <code>AVVIA PSONLINE.bat</code></b>,
+    poi ricarica questa pagina.
+  </div>
+
+  <!-- 1 · GIOCO -->
+  <div class="card">
+    <label class="lbl"><span data-i18n="step1">1 · Gioco</span></label>
+    <select id="lib" style="margin-bottom:12px"></select>
+    <p class="help" id="lib-hint" style="margin-top:0;margin-bottom:14px"></p>
+    <div class="drop" id="drop">
+      <div class="ic">📁</div>
+      <b data-i18n="dropTitle">Trascina qui la ROM, oppure clicca</b>
+      <small>zip · chd · cue · bin · iso · nes · sfc · gba · n64 · md …</small>
+    </div>
+    <input type="file" id="rom" hidden>
+    <div id="rom-info" hidden></div>
+    <div id="rom-advice"></div>
+    <details class="note info" id="ps1help" style="margin-top:12px" hidden>
+      <summary style="cursor:pointer;font-weight:600" data-i18n="ps1summary">Quale file scegliere per i giochi PlayStation?</summary>
+      <div style="margin-top:10px" data-i18n-html="ps1body">
+        <b>Nella maggior parte dei casi: il file <code>.bin</code>.</b><br>
+        È il disco vero e proprio e basta da solo.<br><br>
+        <b>Il <code>.cue</code> da solo non funziona:</b> è un file di testo di poche righe
+        che <i>rimanda</i> al <code>.bin</code>, e il browser non può andarlo a prendere
+        da solo. Serve solo se sta dentro uno zip insieme al <code>.bin</code>.<br><br>
+        <b>Se il gioco ha più tracce</b> (più <code>.bin</code> numerati, tipiche dei giochi
+        con musica da CD): seleziona la cartella del gioco in Windows, tasto destro →
+        <i>Invia a</i> → <i>Cartella compressa</i>, e trascina qui lo <code>.zip</code>.<br><br>
+        <b><code>.chd</code></b> è il formato migliore: un file unico e compresso, contiene tutto.
+      </div>
+    </details>
+  </div>
+
+  <!-- 2 · CONSOLE -->
+  <div class="card">
+    <label class="lbl"><span data-i18n="step2">2 · Console</span></label>
+    <select id="sys"></select>
+    <p class="help" id="sys-hint" data-i18n="sysHintBase">La console viene riconosciuta dall'estensione del file. Puoi correggerla se sbaglia.</p>
+  </div>
+
+  <!-- 3 · BIOS -->
+  <div class="card">
+    <label class="lbl"><span data-i18n="step3">3 · BIOS</span></label>
+    <label class="row" style="cursor:pointer;gap:8px">
+      <input type="checkbox" id="bios-auto" checked style="width:auto;margin:0">
+      <span data-i18n-html="biosAuto"><b>Automatico</b> — scelgo io il BIOS giusto dalla cartella <code>data/bios</code></span>
+    </label>
+    <p class="help" id="bios-need"></p>
+    <select id="bios-sel" style="margin-top:10px" hidden></select>
+    <div class="row" style="margin-top:10px" id="bios-manual" hidden>
+      <button class="btn ghost" id="pick-bios" data-i18n="pickBios">📂 Scegli un file dal disco</button>
+    </div>
+    <input type="file" id="bios" hidden>
+    <div id="bios-info" hidden></div>
+  </div>
+
+  <button class="btn big" id="go" disabled data-i18n="start">▶ Avvia</button>
+  <div class="note info" style="margin-top:16px" data-i18n="privacy">
+    I file restano sul tuo computer: il gioco viene aperto direttamente dal browser,
+    non viene caricato da nessuna parte.
+  </div>
+</div>
+
+<!-- PLAYER -->
+<div id="player" hidden>
+  <div id="bar">
+    <button class="btn ghost" id="back" style="padding:6px 12px;font-size:12px" data-i18n="back">← Indietro</button>
+    <span class="t" id="ptitle"></span>
+    <span id="savemsg" style="font-size:12px;color:#57c07d;opacity:0;transition:opacity .4s"></span>
+    <button class="btn ghost" id="savebtn" style="padding:6px 12px;font-size:12px" data-i18n="saveDisk">💾 Salva su disco</button>
+    <button class="btn ghost" id="diagbtn" style="padding:6px 12px;font-size:12px" data-i18n="details">ℹ Dettagli</button>
+  </div>
+  <pre id="diag" hidden style="margin:0;padding:10px 14px;background:#0d0e10;border-bottom:1px solid var(--line);color:#9ccdff;font-size:12px;white-space:pre-wrap;max-height:30vh;overflow:auto"></pre>
+  <div id="game"></div>
+</div>
+
+<script>
+/* ============================================================
+   Sistemi supportati da EmulatorJS.
+   `core` è il valore accettato da EJS_core; `ext` serve solo a indovinare
+   la console dal nome del file.
+   ============================================================ */
+/* ===================== LINGUE =============================================
+   Solo testo: cambia le scritte dell'interfaccia, niente altro. Le voci fisse
+   sono marcate nell'HTML con data-i18n (testo) o data-i18n-html (con grassetti
+   e <code>). Quelle che cambiano durante l'uso passano da t('chiave').
+   L'italiano resta la lingua di partenza. ====================================*/
+const LANGS = [
+  ['it','Italiano'], ['en','English'], ['es','Español'], ['fr','Français'],
+  ['de','Deutsch'],  ['pt','Português'], ['nl','Nederlands'], ['pl','Polski'],
+  ['ru','Русский'],  ['ar','العربية'], ['hi','हिन्दी'],
+  ['zh','中文'],      ['ja','日本語'],
+];
+
+const I18N = {
+it:{tagline:"Emulatore multiconsole nel browser — basato su EmulatorJS",step1:"1 · Gioco",step2:"2 · Console",step3:"3 · BIOS",dropTitle:"Trascina qui la ROM, oppure clicca",start:"▶ Avvia",back:"← Indietro",saveDisk:"💾 Salva su disco",details:"ℹ Dettagli",pickBios:"📂 Scegli un file dal disco",privacy:"I file restano sul tuo computer: il gioco viene aperto direttamente dal browser, non viene caricato da nessuna parte.",sysHintBase:"La console viene riconosciuta dall'estensione del file. Puoi correggerla se sbaglia.",sysDetected:"Console riconosciuta dall'estensione. Cambiala se non è corretta.",sysGeneric:"Estensione generica: controlla che la console qui sopra sia quella giusta.",libPick:"— scegli un gioco dalla cartella data/roms —",libFound:"{n} giochi trovati in data/roms — oppure trascina un file qui sotto.",libEmpty:"Nessun gioco in data/roms. Trascina un file qui sotto.",libErr:"Elenco non disponibile: server da riavviare.",biosUse:"Userò <b>{f}</b>, consegnato come <code>{c}</code>.",biosNone:"⚠ Nessun BIOS trovato in data/bios: questo core lo richiede.",biosNotNeeded:"Non serve: questo core ha il BIOS integrato, non gliene passo nessuno.",biosManual:"Scelta manuale: seleziona il BIOS qui sotto.",biosAuto:"<b>Automatico</b> — scelgo io il BIOS giusto dalla cartella <code>data/bios</code>",saveOk:"Salvataggio scritto su disco",saveBack:"Salvataggio ripristinato dal disco",ps1summary:"Quale file scegliere per i giochi PlayStation?",ps1body:"<b>Nella maggior parte dei casi: il file <code>.bin</code>.</b><br>È il disco vero e proprio e basta da solo.<br><br><b>Il <code>.cue</code> da solo non funziona:</b> è un file di testo che <i>rimanda</i> al <code>.bin</code>. Serve solo dentro uno zip insieme al <code>.bin</code>.<br><br><b>Se il gioco ha più tracce</b>: comprimi la cartella del gioco in uno <b>.zip</b> con Windows e trascina quello.<br><br><b><code>.chd</code></b> è il formato migliore: un file unico e compresso.",oldserver:"<b>⚠ Il server in esecuzione è quello vecchio.</b><br>Le rotte <code>/api/roms</code> e <code>/api/bios</code> non rispondono.<br><b>Chiudi la finestra nera del server e rilancia <code>AVVIA PSONLINE.bat</code></b>, poi ricarica questa pagina."},
+
+en:{tagline:"Multi-console emulator in your browser — powered by EmulatorJS",step1:"1 · Game",step2:"2 · Console",step3:"3 · BIOS",dropTitle:"Drop your ROM here, or click",start:"▶ Start",back:"← Back",saveDisk:"💾 Save to disk",details:"ℹ Details",pickBios:"📂 Choose a file from disk",privacy:"Your files stay on your computer: the game is opened directly by the browser and is never uploaded anywhere.",sysHintBase:"The console is detected from the file extension. You can correct it if it's wrong.",sysDetected:"Console detected from the extension. Change it if it's not right.",sysGeneric:"Generic extension: check that the console above is the correct one.",libPick:"— choose a game from the data/roms folder —",libFound:"{n} games found in data/roms — or drop a file below.",libEmpty:"No games in data/roms. Drop a file below.",libErr:"List unavailable: the server needs restarting.",biosUse:"I'll use <b>{f}</b>, delivered as <code>{c}</code>.",biosNone:"⚠ No BIOS found in data/bios: this core requires one.",biosNotNeeded:"Not needed: this core has a built-in BIOS, so none is passed.",biosManual:"Manual choice: select the BIOS below.",biosAuto:"<b>Automatic</b> — I pick the right BIOS from the <code>data/bios</code> folder",saveOk:"Save written to disk",saveBack:"Save restored from disk",ps1summary:"Which file should I pick for PlayStation games?",ps1body:"<b>In most cases: the <code>.bin</code> file.</b><br>It is the actual disc and works on its own.<br><br><b>The <code>.cue</code> alone does not work:</b> it is a text file that <i>points</i> to the <code>.bin</code>. It only helps inside a zip together with the <code>.bin</code>.<br><br><b>If the game has multiple tracks</b>: compress the game folder into a <b>.zip</b> with Windows and drop that.<br><br><b><code>.chd</code></b> is the best format: a single compressed file.",oldserver:"<b>⚠ The running server is the old one.</b><br>The <code>/api/roms</code> and <code>/api/bios</code> routes are not responding.<br><b>Close the black server window and run <code>AVVIA PSONLINE.bat</code> again</b>, then reload this page."},
+
+es:{tagline:"Emulador multiconsola en el navegador — basado en EmulatorJS",step1:"1 · Juego",step2:"2 · Consola",step3:"3 · BIOS",dropTitle:"Arrastra aquí la ROM, o haz clic",start:"▶ Iniciar",back:"← Atrás",saveDisk:"💾 Guardar en disco",details:"ℹ Detalles",pickBios:"📂 Elegir un archivo del disco",privacy:"Los archivos permanecen en tu ordenador: el juego lo abre directamente el navegador y no se sube a ningún sitio.",sysHintBase:"La consola se reconoce por la extensión del archivo. Puedes corregirla si se equivoca.",sysDetected:"Consola reconocida por la extensión. Cámbiala si no es correcta.",sysGeneric:"Extensión genérica: comprueba que la consola de arriba sea la correcta.",libPick:"— elige un juego de la carpeta data/roms —",libFound:"{n} juegos encontrados en data/roms — o arrastra un archivo aquí abajo.",libEmpty:"No hay juegos en data/roms. Arrastra un archivo aquí abajo.",libErr:"Lista no disponible: hay que reiniciar el servidor.",biosUse:"Usaré <b>{f}</b>, entregado como <code>{c}</code>.",biosNone:"⚠ No se encontró ninguna BIOS en data/bios: este núcleo la requiere.",biosNotNeeded:"No hace falta: este núcleo lleva BIOS integrada, no le paso ninguna.",biosManual:"Elección manual: selecciona la BIOS aquí abajo.",biosAuto:"<b>Automático</b> — elijo yo la BIOS correcta de la carpeta <code>data/bios</code>",saveOk:"Partida guardada en el disco",saveBack:"Partida restaurada desde el disco",ps1summary:"¿Qué archivo elegir para los juegos de PlayStation?",ps1body:"<b>En la mayoría de los casos: el archivo <code>.bin</code>.</b><br>Es el disco en sí y funciona solo.<br><br><b>El <code>.cue</code> por sí solo no funciona:</b> es un archivo de texto que <i>remite</i> al <code>.bin</code>. Solo sirve dentro de un zip junto al <code>.bin</code>.<br><br><b>Si el juego tiene varias pistas</b>: comprime la carpeta del juego en un <b>.zip</b> con Windows y arrastra ese.<br><br><b><code>.chd</code></b> es el mejor formato: un único archivo comprimido.",oldserver:"<b>⚠ El servidor en ejecución es el antiguo.</b><br>Las rutas <code>/api/roms</code> y <code>/api/bios</code> no responden.<br><b>Cierra la ventana negra del servidor y vuelve a ejecutar <code>AVVIA PSONLINE.bat</code></b>, luego recarga esta página."},
+
+fr:{tagline:"Émulateur multiconsole dans le navigateur — basé sur EmulatorJS",step1:"1 · Jeu",step2:"2 · Console",step3:"3 · BIOS",dropTitle:"Glissez la ROM ici, ou cliquez",start:"▶ Démarrer",back:"← Retour",saveDisk:"💾 Enregistrer sur le disque",details:"ℹ Détails",pickBios:"📂 Choisir un fichier sur le disque",privacy:"Vos fichiers restent sur votre ordinateur : le jeu est ouvert directement par le navigateur et n'est envoyé nulle part.",sysHintBase:"La console est reconnue d'après l'extension du fichier. Vous pouvez la corriger si besoin.",sysDetected:"Console reconnue d'après l'extension. Changez-la si elle est incorrecte.",sysGeneric:"Extension générique : vérifiez que la console ci-dessus est la bonne.",libPick:"— choisissez un jeu dans le dossier data/roms —",libFound:"{n} jeux trouvés dans data/roms — ou glissez un fichier ci-dessous.",libEmpty:"Aucun jeu dans data/roms. Glissez un fichier ci-dessous.",libErr:"Liste indisponible : le serveur doit être redémarré.",biosUse:"J'utiliserai <b>{f}</b>, transmis sous le nom <code>{c}</code>.",biosNone:"⚠ Aucun BIOS trouvé dans data/bios : ce cœur en exige un.",biosNotNeeded:"Inutile : ce cœur possède un BIOS intégré, je n'en transmets aucun.",biosManual:"Choix manuel : sélectionnez le BIOS ci-dessous.",biosAuto:"<b>Automatique</b> — je choisis le bon BIOS dans le dossier <code>data/bios</code>",saveOk:"Sauvegarde écrite sur le disque",saveBack:"Sauvegarde restaurée depuis le disque",ps1summary:"Quel fichier choisir pour les jeux PlayStation ?",ps1body:"<b>Dans la plupart des cas : le fichier <code>.bin</code>.</b><br>C'est le disque lui-même et il suffit.<br><br><b>Le <code>.cue</code> seul ne fonctionne pas :</b> c'est un fichier texte qui <i>renvoie</i> au <code>.bin</code>. Il ne sert que dans un zip avec le <code>.bin</code>.<br><br><b>Si le jeu a plusieurs pistes</b> : compressez le dossier du jeu en <b>.zip</b> avec Windows et glissez-le.<br><br><b><code>.chd</code></b> est le meilleur format : un seul fichier compressé.",oldserver:"<b>⚠ Le serveur en cours d'exécution est l'ancien.</b><br>Les routes <code>/api/roms</code> et <code>/api/bios</code> ne répondent pas.<br><b>Fermez la fenêtre noire du serveur et relancez <code>AVVIA PSONLINE.bat</code></b>, puis rechargez cette page."},
+
+de:{tagline:"Multikonsolen-Emulator im Browser — basiert auf EmulatorJS",step1:"1 · Spiel",step2:"2 · Konsole",step3:"3 · BIOS",dropTitle:"ROM hierher ziehen oder klicken",start:"▶ Starten",back:"← Zurück",saveDisk:"💾 Auf Festplatte speichern",details:"ℹ Details",pickBios:"📂 Datei von der Festplatte wählen",privacy:"Ihre Dateien bleiben auf Ihrem Computer: Das Spiel wird direkt vom Browser geöffnet und nirgendwohin hochgeladen.",sysHintBase:"Die Konsole wird an der Dateiendung erkannt. Sie können sie bei Bedarf korrigieren.",sysDetected:"Konsole anhand der Endung erkannt. Ändern Sie sie, falls sie nicht stimmt.",sysGeneric:"Allgemeine Endung: Prüfen Sie, ob die Konsole oben die richtige ist.",libPick:"— ein Spiel aus dem Ordner data/roms wählen —",libFound:"{n} Spiele in data/roms gefunden — oder unten eine Datei ablegen.",libEmpty:"Keine Spiele in data/roms. Legen Sie unten eine Datei ab.",libErr:"Liste nicht verfügbar: Server muss neu gestartet werden.",biosUse:"Ich verwende <b>{f}</b>, übergeben als <code>{c}</code>.",biosNone:"⚠ Kein BIOS in data/bios gefunden: Dieser Core benötigt eines.",biosNotNeeded:"Nicht nötig: Dieser Core hat ein integriertes BIOS, es wird keines übergeben.",biosManual:"Manuelle Auswahl: BIOS unten auswählen.",biosAuto:"<b>Automatisch</b> — ich wähle das passende BIOS aus dem Ordner <code>data/bios</code>",saveOk:"Spielstand auf Festplatte geschrieben",saveBack:"Spielstand von der Festplatte wiederhergestellt",ps1summary:"Welche Datei soll ich für PlayStation-Spiele wählen?",ps1body:"<b>In den meisten Fällen: die <code>.bin</code>-Datei.</b><br>Sie ist die eigentliche Disc und genügt allein.<br><br><b>Die <code>.cue</code> allein funktioniert nicht:</b> Sie ist eine Textdatei, die auf die <code>.bin</code> <i>verweist</i>. Sie hilft nur in einem Zip zusammen mit der <code>.bin</code>.<br><br><b>Bei mehreren Tracks</b>: Komprimieren Sie den Spielordner mit Windows zu einer <b>.zip</b> und ziehen Sie diese hierher.<br><br><b><code>.chd</code></b> ist das beste Format: eine einzige komprimierte Datei.",oldserver:"<b>⚠ Der laufende Server ist der alte.</b><br>Die Routen <code>/api/roms</code> und <code>/api/bios</code> antworten nicht.<br><b>Schließen Sie das schwarze Serverfenster und starten Sie <code>AVVIA PSONLINE.bat</code> erneut</b>, dann laden Sie diese Seite neu."},
+
+pt:{tagline:"Emulador multiconsola no navegador — baseado em EmulatorJS",step1:"1 · Jogo",step2:"2 · Consola",step3:"3 · BIOS",dropTitle:"Arraste a ROM para aqui, ou clique",start:"▶ Iniciar",back:"← Voltar",saveDisk:"💾 Guardar no disco",details:"ℹ Detalhes",pickBios:"📂 Escolher um ficheiro do disco",privacy:"Os ficheiros ficam no seu computador: o jogo é aberto diretamente pelo navegador e não é enviado para lado nenhum.",sysHintBase:"A consola é reconhecida pela extensão do ficheiro. Pode corrigi-la se estiver errada.",sysDetected:"Consola reconhecida pela extensão. Altere-a se não estiver correta.",sysGeneric:"Extensão genérica: verifique se a consola acima é a correta.",libPick:"— escolha um jogo da pasta data/roms —",libFound:"{n} jogos encontrados em data/roms — ou arraste um ficheiro abaixo.",libEmpty:"Nenhum jogo em data/roms. Arraste um ficheiro abaixo.",libErr:"Lista indisponível: é preciso reiniciar o servidor.",biosUse:"Vou usar <b>{f}</b>, entregue como <code>{c}</code>.",biosNone:"⚠ Nenhuma BIOS encontrada em data/bios: este núcleo exige uma.",biosNotNeeded:"Não é preciso: este núcleo tem BIOS integrada, não passo nenhuma.",biosManual:"Escolha manual: selecione a BIOS abaixo.",biosAuto:"<b>Automático</b> — escolho eu a BIOS certa na pasta <code>data/bios</code>",saveOk:"Gravação escrita no disco",saveBack:"Gravação restaurada do disco",ps1summary:"Que ficheiro escolher para os jogos PlayStation?",ps1body:"<b>Na maioria dos casos: o ficheiro <code>.bin</code>.</b><br>É o disco em si e basta sozinho.<br><br><b>O <code>.cue</code> sozinho não funciona:</b> é um ficheiro de texto que <i>remete</i> para o <code>.bin</code>. Só serve dentro de um zip junto com o <code>.bin</code>.<br><br><b>Se o jogo tiver várias faixas</b>: comprima a pasta do jogo num <b>.zip</b> com o Windows e arraste esse.<br><br><b><code>.chd</code></b> é o melhor formato: um único ficheiro comprimido.",oldserver:"<b>⚠ O servidor em execução é o antigo.</b><br>As rotas <code>/api/roms</code> e <code>/api/bios</code> não respondem.<br><b>Feche a janela preta do servidor e execute novamente <code>AVVIA PSONLINE.bat</code></b>, depois recarregue esta página."},
+
+nl:{tagline:"Multiconsole-emulator in de browser — gebaseerd op EmulatorJS",step1:"1 · Spel",step2:"2 · Console",step3:"3 · BIOS",dropTitle:"Sleep de ROM hierheen, of klik",start:"▶ Starten",back:"← Terug",saveDisk:"💾 Opslaan op schijf",details:"ℹ Details",pickBios:"📂 Kies een bestand van de schijf",privacy:"Je bestanden blijven op je computer: het spel wordt rechtstreeks door de browser geopend en nergens naartoe geüpload.",sysHintBase:"De console wordt herkend aan de bestandsextensie. Je kunt dit corrigeren.",sysDetected:"Console herkend aan de extensie. Wijzig het als het niet klopt.",sysGeneric:"Algemene extensie: controleer of de console hierboven de juiste is.",libPick:"— kies een spel uit de map data/roms —",libFound:"{n} spellen gevonden in data/roms — of sleep hieronder een bestand.",libEmpty:"Geen spellen in data/roms. Sleep hieronder een bestand.",libErr:"Lijst niet beschikbaar: server moet opnieuw worden gestart.",biosUse:"Ik gebruik <b>{f}</b>, aangeleverd als <code>{c}</code>.",biosNone:"⚠ Geen BIOS gevonden in data/bios: deze core heeft er een nodig.",biosNotNeeded:"Niet nodig: deze core heeft een ingebouwde BIOS, ik geef er geen door.",biosManual:"Handmatige keuze: selecteer hieronder de BIOS.",biosAuto:"<b>Automatisch</b> — ik kies de juiste BIOS uit de map <code>data/bios</code>",saveOk:"Opgeslagen op schijf",saveBack:"Opgeslagen spel hersteld vanaf schijf",ps1summary:"Welk bestand kies ik voor PlayStation-spellen?",ps1body:"<b>Meestal: het <code>.bin</code>-bestand.</b><br>Dat is de echte schijf en werkt op zichzelf.<br><br><b>De <code>.cue</code> alleen werkt niet:</b> het is een tekstbestand dat naar de <code>.bin</code> <i>verwijst</i>. Het helpt alleen in een zip samen met de <code>.bin</code>.<br><br><b>Bij meerdere tracks</b>: comprimeer de spelmap met Windows tot een <b>.zip</b> en sleep die hierheen.<br><br><b><code>.chd</code></b> is het beste formaat: één gecomprimeerd bestand.",oldserver:"<b>⚠ De draaiende server is de oude.</b><br>De routes <code>/api/roms</code> en <code>/api/bios</code> reageren niet.<br><b>Sluit het zwarte servervenster en start <code>AVVIA PSONLINE.bat</code> opnieuw</b>, en herlaad deze pagina."},
+
+pl:{tagline:"Emulator wielu konsol w przeglądarce — oparty na EmulatorJS",step1:"1 · Gra",step2:"2 · Konsola",step3:"3 · BIOS",dropTitle:"Przeciągnij tu ROM albo kliknij",start:"▶ Uruchom",back:"← Wstecz",saveDisk:"💾 Zapisz na dysk",details:"ℹ Szczegóły",pickBios:"📂 Wybierz plik z dysku",privacy:"Pliki zostają na Twoim komputerze: gra jest otwierana bezpośrednio przez przeglądarkę i nigdzie nie jest wysyłana.",sysHintBase:"Konsola jest rozpoznawana po rozszerzeniu pliku. Możesz to poprawić.",sysDetected:"Konsola rozpoznana po rozszerzeniu. Zmień, jeśli się nie zgadza.",sysGeneric:"Ogólne rozszerzenie: sprawdź, czy konsola powyżej jest właściwa.",libPick:"— wybierz grę z folderu data/roms —",libFound:"Znaleziono {n} gier w data/roms — albo przeciągnij plik poniżej.",libEmpty:"Brak gier w data/roms. Przeciągnij plik poniżej.",libErr:"Lista niedostępna: trzeba zrestartować serwer.",biosUse:"Użyję <b>{f}</b>, przekazanego jako <code>{c}</code>.",biosNone:"⚠ Nie znaleziono BIOS-u w data/bios: ten rdzeń go wymaga.",biosNotNeeded:"Niepotrzebny: ten rdzeń ma wbudowany BIOS, żaden nie jest przekazywany.",biosManual:"Wybór ręczny: wskaż BIOS poniżej.",biosAuto:"<b>Automatycznie</b> — sam wybieram właściwy BIOS z folderu <code>data/bios</code>",saveOk:"Zapis zapisany na dysku",saveBack:"Zapis przywrócony z dysku",ps1summary:"Który plik wybrać do gier PlayStation?",ps1body:"<b>W większości przypadków: plik <code>.bin</code>.</b><br>To właściwa płyta i wystarcza sam.<br><br><b>Sam <code>.cue</code> nie działa:</b> to plik tekstowy, który <i>wskazuje</i> na <code>.bin</code>. Przydaje się tylko w zipie razem z <code>.bin</code>.<br><br><b>Jeśli gra ma wiele ścieżek</b>: spakuj folder gry do <b>.zip</b> w Windowsie i przeciągnij go tutaj.<br><br><b><code>.chd</code></b> to najlepszy format: jeden skompresowany plik.",oldserver:"<b>⚠ Działa stary serwer.</b><br>Trasy <code>/api/roms</code> i <code>/api/bios</code> nie odpowiadają.<br><b>Zamknij czarne okno serwera i uruchom ponownie <code>AVVIA PSONLINE.bat</code></b>, potem odśwież tę stronę."},
+
+ru:{tagline:"Мультиконсольный эмулятор в браузере — на основе EmulatorJS",step1:"1 · Игра",step2:"2 · Консоль",step3:"3 · BIOS",dropTitle:"Перетащите сюда ROM или нажмите",start:"▶ Запустить",back:"← Назад",saveDisk:"💾 Сохранить на диск",details:"ℹ Подробности",pickBios:"📂 Выбрать файл с диска",privacy:"Файлы остаются на вашем компьютере: игра открывается прямо браузером и никуда не загружается.",sysHintBase:"Консоль определяется по расширению файла. Вы можете это исправить.",sysDetected:"Консоль определена по расширению. Измените, если неверно.",sysGeneric:"Общее расширение: проверьте, та ли консоль выбрана выше.",libPick:"— выберите игру из папки data/roms —",libFound:"Найдено игр в data/roms: {n} — или перетащите файл ниже.",libEmpty:"В data/roms нет игр. Перетащите файл ниже.",libErr:"Список недоступен: нужно перезапустить сервер.",biosUse:"Использую <b>{f}</b>, передаётся как <code>{c}</code>.",biosNone:"⚠ В data/bios не найден BIOS: этому ядру он необходим.",biosNotNeeded:"Не требуется: у этого ядра встроенный BIOS, ничего не передаётся.",biosManual:"Ручной выбор: укажите BIOS ниже.",biosAuto:"<b>Автоматически</b> — я сам выберу нужный BIOS из папки <code>data/bios</code>",saveOk:"Сохранение записано на диск",saveBack:"Сохранение восстановлено с диска",ps1summary:"Какой файл выбрать для игр PlayStation?",ps1body:"<b>В большинстве случаев: файл <code>.bin</code>.</b><br>Это и есть сам диск, его достаточно.<br><br><b>Один <code>.cue</code> не работает:</b> это текстовый файл, который <i>ссылается</i> на <code>.bin</code>. Он полезен только в zip вместе с <code>.bin</code>.<br><br><b>Если в игре несколько дорожек</b>: сожмите папку игры в <b>.zip</b> средствами Windows и перетащите его.<br><br><b><code>.chd</code></b> — лучший формат: один сжатый файл.",oldserver:"<b>⚠ Запущен старый сервер.</b><br>Маршруты <code>/api/roms</code> и <code>/api/bios</code> не отвечают.<br><b>Закройте чёрное окно сервера и снова запустите <code>AVVIA PSONLINE.bat</code></b>, затем перезагрузите страницу."},
+
+ar:{tagline:"محاكي متعدد المنصات في المتصفح — يعتمد على EmulatorJS",step1:"١ · اللعبة",step2:"٢ · المنصة",step3:"٣ · BIOS",dropTitle:"اسحب ملف اللعبة هنا، أو انقر",start:"▶ تشغيل",back:"← رجوع",saveDisk:"💾 حفظ على القرص",details:"ℹ التفاصيل",pickBios:"📂 اختر ملفًا من القرص",privacy:"تبقى ملفاتك على حاسوبك: تُفتح اللعبة مباشرة عبر المتصفح ولا تُرفع إلى أي مكان.",sysHintBase:"يتم التعرف على المنصة من امتداد الملف. يمكنك تصحيحها.",sysDetected:"تم التعرف على المنصة من الامتداد. غيّرها إن لم تكن صحيحة.",sysGeneric:"امتداد عام: تحقق من أن المنصة أعلاه هي الصحيحة.",libPick:"— اختر لعبة من مجلد data/roms —",libFound:"تم العثور على {n} لعبة في data/roms — أو اسحب ملفًا بالأسفل.",libEmpty:"لا توجد ألعاب في data/roms. اسحب ملفًا بالأسفل.",libErr:"القائمة غير متاحة: يجب إعادة تشغيل الخادم.",biosUse:"سأستخدم <b>{f}</b>، ويُسلَّم باسم <code>{c}</code>.",biosNone:"⚠ لم يُعثر على BIOS في data/bios: هذه النواة تتطلبه.",biosNotNeeded:"غير مطلوب: هذه النواة تحتوي على BIOS مدمج، ولن يُمرَّر أي ملف.",biosManual:"اختيار يدوي: حدد ملف BIOS بالأسفل.",biosAuto:"<b>تلقائي</b> — سأختار ملف BIOS المناسب من مجلد <code>data/bios</code>",saveOk:"تم حفظ التقدم على القرص",saveBack:"تمت استعادة الحفظ من القرص",ps1summary:"أي ملف أختار لألعاب PlayStation؟",ps1body:"<b>في معظم الحالات: ملف <code>.bin</code>.</b><br>هو القرص نفسه ويكفي وحده.<br><br><b>ملف <code>.cue</code> وحده لا يعمل:</b> فهو ملف نصي <i>يشير</i> إلى <code>.bin</code>. ولا يفيد إلا داخل ملف zip مع <code>.bin</code>.<br><br><b>إذا كانت اللعبة متعددة المسارات</b>: اضغط مجلد اللعبة إلى <b>.zip</b> عبر ويندوز واسحبه هنا.<br><br><b><code>.chd</code></b> هو الأفضل: ملف واحد مضغوط.",oldserver:"<b>⚠ الخادم العامل هو القديم.</b><br>المساران <code>/api/roms</code> و<code>/api/bios</code> لا يستجيبان.<br><b>أغلق نافذة الخادم السوداء وشغّل <code>AVVIA PSONLINE.bat</code> من جديد</b>، ثم أعد تحميل الصفحة."},
+
+hi:{tagline:"ब्राउज़र में मल्टी-कंसोल एमुलेटर — EmulatorJS पर आधारित",step1:"1 · गेम",step2:"2 · कंसोल",step3:"3 · BIOS",dropTitle:"ROM यहाँ खींचें, या क्लिक करें",start:"▶ शुरू करें",back:"← वापस",saveDisk:"💾 डिस्क पर सेव करें",details:"ℹ विवरण",pickBios:"📂 डिस्क से फ़ाइल चुनें",privacy:"आपकी फ़ाइलें आपके कंप्यूटर पर ही रहती हैं: गेम सीधे ब्राउज़र खोलता है, कहीं अपलोड नहीं होता।",sysHintBase:"कंसोल फ़ाइल के एक्सटेंशन से पहचाना जाता है। ग़लत हो तो बदल सकते हैं।",sysDetected:"एक्सटेंशन से कंसोल पहचाना गया। सही न हो तो बदलें।",sysGeneric:"सामान्य एक्सटेंशन: जाँचें कि ऊपर सही कंसोल चुना है।",libPick:"— data/roms फ़ोल्डर से गेम चुनें —",libFound:"data/roms में {n} गेम मिले — या नीचे फ़ाइल खींचें।",libEmpty:"data/roms में कोई गेम नहीं। नीचे फ़ाइल खींचें।",libErr:"सूची उपलब्ध नहीं: सर्वर फिर से चालू करें।",biosUse:"मैं <b>{f}</b> इस्तेमाल करूँगा, <code>{c}</code> के रूप में।",biosNone:"⚠ data/bios में कोई BIOS नहीं मिला: इस कोर को यह चाहिए।",biosNotNeeded:"ज़रूरत नहीं: इस कोर में BIOS पहले से है, कोई नहीं भेजा जाएगा।",biosManual:"मैन्युअल चयन: नीचे BIOS चुनें।",biosAuto:"<b>स्वचालित</b> — मैं <code>data/bios</code> फ़ोल्डर से सही BIOS चुन लूँगा",saveOk:"सेव डिस्क पर लिखा गया",saveBack:"सेव डिस्क से बहाल किया गया",ps1summary:"PlayStation गेम के लिए कौन-सी फ़ाइल चुनें?",ps1body:"<b>ज़्यादातर मामलों में: <code>.bin</code> फ़ाइल।</b><br>यही असली डिस्क है और अकेले काम करती है।<br><br><b>अकेला <code>.cue</code> काम नहीं करता:</b> यह टेक्स्ट फ़ाइल है जो <code>.bin</code> की ओर <i>इशारा</i> करती है। यह केवल zip में <code>.bin</code> के साथ उपयोगी है।<br><br><b>अगर गेम में कई ट्रैक हैं</b>: विंडोज़ से गेम फ़ोल्डर को <b>.zip</b> बनाएँ और वही खींचें।<br><br><b><code>.chd</code></b> सबसे अच्छा फ़ॉर्मैट है: एक ही संपीड़ित फ़ाइल।",oldserver:"<b>⚠ चल रहा सर्वर पुराना है।</b><br><code>/api/roms</code> और <code>/api/bios</code> जवाब नहीं दे रहे।<br><b>सर्वर की काली विंडो बंद करें और <code>AVVIA PSONLINE.bat</code> दोबारा चलाएँ</b>, फिर यह पेज रीलोड करें।"},
+
+zh:{tagline:"浏览器中的多主机模拟器 — 基于 EmulatorJS",step1:"1 · 游戏",step2:"2 · 主机",step3:"3 · BIOS",dropTitle:"将 ROM 拖到这里，或点击选择",start:"▶ 开始",back:"← 返回",saveDisk:"💾 保存到磁盘",details:"ℹ 详情",pickBios:"📂 从磁盘选择文件",privacy:"文件始终留在你的电脑上：游戏由浏览器直接打开，不会上传到任何地方。",sysHintBase:"主机根据文件扩展名识别。识别有误时可以手动更改。",sysDetected:"已根据扩展名识别主机。不正确请更改。",sysGeneric:"通用扩展名：请确认上方选择的主机是否正确。",libPick:"— 从 data/roms 文件夹中选择游戏 —",libFound:"在 data/roms 中找到 {n} 个游戏 — 也可以在下方拖入文件。",libEmpty:"data/roms 中没有游戏。请在下方拖入文件。",libErr:"列表不可用：需要重启服务器。",biosUse:"将使用 <b>{f}</b>，以 <code>{c}</code> 的名称提供。",biosNone:"⚠ 在 data/bios 中未找到 BIOS：此内核需要它。",biosNotNeeded:"不需要：此内核自带 BIOS，不会传入任何文件。",biosManual:"手动选择：请在下方选择 BIOS。",biosAuto:"<b>自动</b> — 由我从 <code>data/bios</code> 文件夹中挑选合适的 BIOS",saveOk:"存档已写入磁盘",saveBack:"已从磁盘恢复存档",ps1summary:"PlayStation 游戏该选哪个文件？",ps1body:"<b>大多数情况下：选 <code>.bin</code> 文件。</b><br>它就是光盘本身，单独即可使用。<br><br><b>单独的 <code>.cue</code> 不行：</b>它只是指向 <code>.bin</code> 的文本文件，只有和 <code>.bin</code> 一起压缩进 zip 才有用。<br><br><b>如果游戏有多条音轨</b>：用 Windows 把游戏文件夹压缩成 <b>.zip</b>，然后拖入。<br><br><b><code>.chd</code></b> 是最佳格式：单个压缩文件，包含全部内容。",oldserver:"<b>⚠ 正在运行的是旧版服务器。</b><br><code>/api/roms</code> 和 <code>/api/bios</code> 没有响应。<br><b>关闭黑色的服务器窗口，重新运行 <code>AVVIA PSONLINE.bat</code></b>，然后刷新本页面。"},
+
+ja:{tagline:"ブラウザで動くマルチ機種エミュレーター — EmulatorJS ベース",step1:"1 · ゲーム",step2:"2 · 機種",step3:"3 · BIOS",dropTitle:"ROM をここにドラッグ、またはクリック",start:"▶ 開始",back:"← 戻る",saveDisk:"💾 ディスクに保存",details:"ℹ 詳細",pickBios:"📂 ディスクからファイルを選ぶ",privacy:"ファイルはあなたのパソコンに残ります。ゲームはブラウザが直接開き、どこにもアップロードされません。",sysHintBase:"機種はファイルの拡張子から判別します。違っていれば変更できます。",sysDetected:"拡張子から機種を判別しました。違う場合は変更してください。",sysGeneric:"汎用の拡張子です。上の機種が正しいか確認してください。",libPick:"— data/roms フォルダーからゲームを選ぶ —",libFound:"data/roms に {n} 本のゲームが見つかりました — 下にファイルをドラッグしても構いません。",libEmpty:"data/roms にゲームがありません。下にファイルをドラッグしてください。",libErr:"一覧を取得できません。サーバーを再起動してください。",biosUse:"<b>{f}</b> を <code>{c}</code> という名前で渡します。",biosNone:"⚠ data/bios に BIOS が見つかりません。このコアには必要です。",biosNotNeeded:"不要です。このコアは BIOS を内蔵しているため何も渡しません。",biosManual:"手動選択：下から BIOS を選んでください。",biosAuto:"<b>自動</b> — <code>data/bios</code> フォルダーから適切な BIOS を選びます",saveOk:"セーブをディスクに書き込みました",saveBack:"ディスクからセーブを復元しました",ps1summary:"PlayStation のゲームはどのファイルを選ぶ？",ps1body:"<b>ほとんどの場合は <code>.bin</code> ファイルです。</b><br>これがディスク本体で、単体で動きます。<br><br><b><code>.cue</code> だけでは動きません。</b>これは <code>.bin</code> を<i>参照する</i>テキストファイルで、<code>.bin</code> と一緒に zip に入れた場合にのみ役立ちます。<br><br><b>トラックが複数ある場合</b>：Windows でゲームフォルダーを <b>.zip</b> に圧縮し、それをドラッグしてください。<br><br><b><code>.chd</code></b> が最適な形式です。圧縮された 1 つのファイルにすべてが入っています。",oldserver:"<b>⚠ 実行中のサーバーは古いものです。</b><br><code>/api/roms</code> と <code>/api/bios</code> が応答していません。<br><b>黒いサーバーウィンドウを閉じ、<code>AVVIA PSONLINE.bat</code> を実行し直してください。</b>そのあとこのページを再読み込みしてください。"},
+};
+
+let LANG = 'en';
+
+/** Testo tradotto. {n}, {f}, {c} vengono sostituiti dai valori passati. */
+function t(key, vars) {
+  const dict = I18N[LANG] || I18N.en;
+  let s = (dict && dict[key] !== undefined) ? dict[key] : I18N.en[key];
+  if (s === undefined) return '';
+  if (vars) for (const k in vars) s = s.split('{' + k + '}').join(vars[k]);
+  return s;
+}
+
+/** Riscrive tutte le scritte fisse della pagina. */
+function applyLang(code) {
+  LANG = I18N[code] ? code : 'en';
+  try { localStorage.setItem('gameonline-lang', LANG); } catch (e) {}
+  document.documentElement.lang = LANG;
+  document.documentElement.dir = (LANG === 'ar') ? 'rtl' : 'ltr';
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const v = t(el.getAttribute('data-i18n'));
+    if (v) el.textContent = v;
+  });
+  document.querySelectorAll('[data-i18n-html]').forEach(el => {
+    const v = t(el.getAttribute('data-i18n-html'));
+    if (v) el.innerHTML = v;
+  });
+  // Le scritte che cambiano durante l'uso vanno rigenerate.
+  if (typeof rebuildLibHint === 'function') rebuildLibHint();
+  if (typeof refresh === 'function') refresh();
+}
+
+const SYSTEMS = [
+  { core:'pcsx_rearmed', name:'PlayStation',          ext:['cue','pbp','chd','ccd','m3u'], bios:true },
+  { core:'mednafen_psx_hw', name:'PlayStation (Beetle, richiede BIOS)', ext:[], bios:true },
+  { core:'nes',        name:'NES / Famicom',          ext:['nes','fds','unf','unif']                   },
+  { core:'snes',       name:'SNES / Super Famicom',   ext:['sfc','smc','swc','fig']                    },
+  { core:'n64',        name:'Nintendo 64',            ext:['n64','z64','v64','ndd']                    },
+  { core:'gb',         name:'Game Boy / Color',       ext:['gb','gbc']                                 },
+  { core:'gba',        name:'Game Boy Advance',       ext:['gba']                                      },
+  { core:'nds',        name:'Nintendo DS',            ext:['nds','dsi']                                },
+  { core:'vb',         name:'Virtual Boy',            ext:['vb','vboy']                                },
+  { core:'segaMD',     name:'Sega Mega Drive',        ext:['md','gen','smd']                           },
+  { core:'segaCD',     name:'Sega CD',                ext:[],                              bios:true   },
+  { core:'sega32x',    name:'Sega 32X',               ext:['32x']                                      },
+  { core:'segaMS',     name:'Sega Master System',     ext:['sms']                                      },
+  { core:'segaGG',     name:'Sega Game Gear',         ext:['gg']                                       },
+  { core:'segaSaturn', name:'Sega Saturn',            ext:[],                              bios:true   },
+  { core:'psp',        name:'PlayStation Portable',   ext:['cso','pbp']                                },
+  { core:'3do',        name:'3DO',                    ext:[],                              bios:true   },
+  { core:'atari2600',  name:'Atari 2600',             ext:['a26']                                      },
+  { core:'atari5200',  name:'Atari 5200',             ext:['a52'],                         bios:true   },
+  { core:'atari7800',  name:'Atari 7800',             ext:['a78']                                      },
+  { core:'jaguar',     name:'Atari Jaguar',           ext:['j64','jag']                                },
+  { core:'lynx',       name:'Atari Lynx',             ext:['lnx'],                         bios:true   },
+  { core:'coleco',     name:'ColecoVision',           ext:['col']                                      },
+  { core:'vice_x64',   name:'Commodore 64',           ext:['d64','t64','prg']                          },
+  { core:'vice_x128',  name:'Commodore 128',          ext:[]                                           },
+  { core:'amiga',      name:'Commodore Amiga',        ext:['adf','hdf','ipf'],             bios:true   },
+  { core:'vice_xpet',  name:'Commodore PET',          ext:[]                                           },
+  { core:'vice_xplus4',name:'Commodore Plus/4',       ext:[]                                           },
+  { core:'vice_xvic',  name:'Commodore VIC-20',       ext:[]                                           },
+  { core:'mame2003',   name:'MAME 2003',              ext:[]                                           },
+  { core:'arcade',     name:'Arcade',                 ext:[]                                           },
+];
+// estensioni generiche: non identificano da sole la console
+const AMBIGUOUS = ['zip','7z','rar','bin','iso','img','chd'];
+
+const $ = (id) => document.getElementById(id);
+const fmt = (b) => b >= 1e9 ? (b/1e9).toFixed(2)+' GB' : b >= 1e6 ? (b/1e6).toFixed(0)+' MB' : (b/1024).toFixed(0)+' KB';
+
+let romFile = null, biosFile = null;
+
+/* --- elenco console --- */
+for (const s of SYSTEMS) {
+  const o = document.createElement('option');
+  o.value = s.core; o.textContent = s.name;
+  $('sys').appendChild(o);
+}
+$('sys').value = 'pcsx_rearmed';
+
+/* --- riconoscimento console dal nome del file --- */
+function detect(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  if (AMBIGUOUS.includes(ext)) return null;
+  const hit = SYSTEMS.find(s => s.ext.includes(ext));
+  return hit ? hit.core : null;
+}
+
+/* --- BIOS presenti in data/bios ---
+   Il core cerca il firmware per NOME ESATTO. Un file scelto dal disco diventa
+   un blob URL, che non porta con sé alcun nome: da qui "Firmware is missing".
+   Il server invece può servirlo sotto il nome giusto. */
+const CANON = { eu:'scph5502.bin', us:'scph5501.bin', jp:'scph5500.bin' };
+
+/** Nome canonico dedotto dal file BIOS (modello SCPH: 0=JP, 1=US, 2=EU). */
+function canonName(fname) {
+  const m = /scph[-_ ]?(\d{3,4})/i.exec(fname);
+  const known = { '5500':'scph5500.bin','5501':'scph5501.bin','5502':'scph5502.bin',
+                  '5552':'scph5502.bin','101':'scph101.bin','7001':'scph7001.bin',
+                  '1001':'scph1001.bin' };
+  if (m && known[m[1]]) return known[m[1]];
+  const n = fname.toLowerCase();
+  if (/\(eu\)|europe|pal/.test(n)) return CANON.eu;
+  if (/\(us\)|usa/.test(n))        return CANON.us;
+  if (/\(jp\)|japan/.test(n))      return CANON.jp;
+  if (m) {
+    const d = m[1].slice(-1);
+    if (d === '0') return CANON.jp;
+    if (d === '1' || d === '3') return CANON.us;
+    if (d === '2') return CANON.eu;
+  }
+  return CANON.eu;
+}
+
+let BIOSFILES = [], ROMS = [], libFile = null;
+
+/** Ricalcola le scritte dell'elenco giochi nella lingua attuale. */
+function rebuildLibHint() {
+  const sel = $('lib');
+  if (sel && sel.options.length) sel.options[0].textContent = t('libPick');
+  const h = $('lib-hint');
+  if (!h) return;
+  if (LIB_ERROR)      h.textContent = t('libErr');
+  else if (ROMS.length) h.textContent = t('libFound', { n: ROMS.length });
+  else                h.textContent = t('libEmpty');
+}
+
+let LIB_ERROR = false;
+
+async function loadRoms() {
+  const sel = $('lib');
+  sel.innerHTML = '<option value=""></option>';
+  try {
+    const r = await fetch('/api/roms', { cache: 'no-store' });
+    if (!r.ok) throw new Error('404');
+    ROMS = await r.json();
+    LIB_ERROR = false;
+    for (let i = 0; i < ROMS.length; i++) {
+      const g = ROMS[i];
+      const o = document.createElement('option');
+      o.value = String(i);
+      o.textContent = g.title + '  (' + fmt(g.size) + ')';
+      sel.appendChild(o);
+    }
+  } catch {
+    ROMS = [];
+    LIB_ERROR = true;
+    $('oldserver').hidden = false;
+  }
+  rebuildLibHint();
+  refresh();
+}
+
+async function loadBiosList() {
+  const sel = $('bios-sel');
+  sel.innerHTML = '<option value="">— nessun BIOS —</option>';
+  try {
+    const r = await fetch('/api/bios', { cache: 'no-store' });
+    if (!r.ok) throw new Error('404');
+    const list = await r.json();
+    BIOSFILES = list;
+    for (const b of list) {
+      const o = document.createElement('option');
+      o.value = b.file;
+      o.textContent = `${b.file}  (→ ${canonName(b.file)})`;
+      sel.appendChild(o);
+    }
+    sel.value = '';
+  } catch {
+    BIOSFILES = [];
+    $('oldserver').hidden = false;
+    sel.innerHTML = '<option value="">— elenco non disponibile —</option>';
+  }
+  refresh();
+}
+
+/** Il BIOS più adatto alla console selezionata, fra quelli in data/bios. */
+function autoBios(core) {
+  if (!BIOSFILES.length) return null;
+  const clean = BIOSFILES.filter(b => !/\[[bh]\]/i.test(b.file));   // scarta dump alterati
+
+  // Solo i core che DICHIARANO di richiedere un BIOS lo ricevono.
+  // pcsx_rearmed ne ha uno integrato: imporgliene uno esterno che poi non
+  // riesce a registrare è ciò che produce "Firmware is missing".
+  const sys = SYSTEMS.find(s => s.core === core);
+  if (!sys || !sys.bios) return null;
+  const reg = (n) => {
+    n = n.toLowerCase();
+    if (/\(eu\)|europe|pal/.test(n)) return 'eu';
+    if (/\(us\)|usa/.test(n)) return 'us';
+    if (/\(jp\)|japan/.test(n)) return 'jp';
+    const m = /scph[-_ ]?(\d{3,4})/.exec(n);
+    if (!m) return null;
+    if (m[1] === '101') return 'us';
+    return { '0':'jp','1':'us','3':'us','2':'eu' }[m[1].slice(-1)] || null;
+  };
+  // preferenza: SCPH-5502 europeo, poi qualunque europeo, poi il primo pulito
+  return clean.find(b => /5502/.test(b.file) && reg(b.file) === 'eu')
+      || clean.find(b => reg(b.file) === 'eu')
+      || clean[0] || null;
+}
+
+function refresh() {
+  const sys = SYSTEMS.find(s => s.core === $('sys').value);
+  const auto = $('bios-auto').checked;
+  $('bios-sel').hidden = auto;
+  $('bios-manual').hidden = auto;
+  if (auto) {
+    const pick = autoBios($('sys').value);
+    $('bios-need').innerHTML = pick
+      ? t('biosUse', { f: pick.file.replace(/</g,'&lt;'), c: canonName(pick.file) })
+      : (sys && sys.bios
+          ? t('biosNone')
+          : t('biosNotNeeded'));
+  } else {
+    $('bios-need').textContent = t('biosManual');
+  }
+  // Il riquadro ".bin o .cue?" ha senso solo per i giochi su disco.
+  $('ps1help').hidden = !isDiscCore($('sys').value);
+  if (!isDiscCore($('sys').value)) $('rom-advice').innerHTML = '';
+  $('go').disabled = !romFile && !libFile;
+}
+
+function showRom(f) {
+  romFile = f;
+  libFile = null; $('lib').value = '';
+  const guess = detect(f.name);
+  if (guess) $('sys').value = guess;
+  $('sys-hint').textContent = guess ? t('sysDetected') : t('sysGeneric');
+  $('rom-info').hidden = false;
+  $('rom-info').innerHTML = `<div class="file ok"><span>💿</span>
+    <span class="nm">${f.name.replace(/</g,'&lt;')}</span>
+    <span class="sz">${fmt(f.size)}</span>
+    <button class="x" title="Rimuovi">✕</button></div>`;
+  $('rom-info').querySelector('.x').onclick = () => {
+    romFile = null; $('rom-info').hidden = true; $('rom').value = '';
+    $('rom-advice').innerHTML = ''; refresh();
+  };
+  advise(f);
+  refresh();
+}
+
+/** I core a disco (PlayStation, Sega CD, Saturn, 3DO...) hanno regole loro:
+ *  .cue/.bin, tracce multiple, BIOS. Per le cartucce (GBA, NES, SNES...)
+ *  niente di tutto questo vale, e mostrarlo confonde e basta. */
+const DISC_CORES = ['pcsx_rearmed','mednafen_psx_hw','segaCD','segaSaturn','3do','psp'];
+function isDiscCore(core) { return DISC_CORES.includes(core); }
+
+/** Avvisa subito se il file scelto non può funzionare da solo. */
+function advise(f) {
+  const ext = f.name.split('.').pop().toLowerCase();
+  const box = $('rom-advice');
+  // Gli avvisi qui sotto riguardano SOLO i giochi su disco.
+  if (!isDiscCore($('sys').value)) { box.innerHTML = ''; return; }
+  if (ext === 'cue') {
+    box.innerHTML = `<div class="note warn"><b>Il .cue da solo non basta.</b>
+      È un file di testo che rimanda al .bin, ma il browser non può aprirlo da sé.<br>
+      Scegli invece il file <b>.bin</b> nella stessa cartella — oppure comprimi
+      l'intera cartella del gioco in uno <b>.zip</b> e trascina quello.</div>`;
+  } else if (ext === 'bin' && f.size < 10 * 1024 * 1024) {
+    box.innerHTML = `<div class="note warn">Questo .bin è piccolo (${fmt(f.size)}):
+      potrebbe essere una traccia audio o un BIOS, non il disco del gioco.
+      Il disco principale di solito supera i 100 MB.</div>`;
+  } else {
+    box.innerHTML = '';
+  }
+}
+
+function showBios(f) {
+  biosFile = f;
+  $('bios-info').hidden = false;
+  $('bios-info').innerHTML = `<div class="file ok"><span>🧠</span>
+    <span class="nm">${f.name.replace(/</g,'&lt;')}</span>
+    <span class="sz">${fmt(f.size)}</span>
+    <button class="x" title="Rimuovi">✕</button></div>`;
+  $('bios-info').querySelector('.x').onclick = () => {
+    biosFile = null; $('bios-info').hidden = true; $('bios').value = '';
+  };
+}
+
+/* --- eventi --- */
+$('drop').onclick = () => $('rom').click();
+$('rom').onchange = (e) => { if (e.target.files[0]) showRom(e.target.files[0]); };
+$('pick-bios').onclick = () => $('bios').click();
+$('bios').onchange = (e) => { if (e.target.files[0]) showBios(e.target.files[0]); };
+$('lib').onchange = () => {
+  const i = $('lib').value;
+  if (i === '') { libFile = null; refresh(); return; }
+  const g = ROMS[+i];
+  // URL VERO servito dal nostro server: EmulatorJS può fare HEAD, Range e
+  // mostrare il progresso. Con un blob la richiesta HEAD non produce
+  // intestazioni e il download può non partire affatto.
+  libFile = { url: '/data/roms/' + (g.folder ? encodeURIComponent(g.folder) + '/' : '')
+                   + encodeURIComponent(g.file), name: g.file, size: g.size, tracks: g.tracks };
+  romFile = null;
+  $('rom-info').hidden = true; $('rom-advice').innerHTML = ''; $('rom').value = '';
+  const guess = detect(g.file);
+  if (guess) $('sys').value = guess;
+  $('rom-advice').innerHTML = g.tracks > 1
+    ? `<div class="note warn">Questo gioco ha <b>${g.tracks} tracce</b>. Viene avviata solo
+       quella principale: la musica da CD potrebbe mancare. Per averlo completo, comprimi
+       la cartella del gioco in uno <b>.zip</b> e trascinalo qui sotto.</div>`
+    : '';
+  refresh();
+};
+$('sys').onchange = refresh;
+$('bios-sel').onchange = refresh;
+$('bios-auto').onchange = refresh;
+
+const dz = $('drop');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('over');
+  if (e.dataTransfer.files[0]) showRom(e.dataTransfer.files[0]);
+});
+
+/* --- avvio ---
+   Come la demo ufficiale: il file viene passato COSÌ COM'È tramite un blob URL.
+   Nessun archivio creato al volo, nessuna manipolazione: è proprio lì che
+   nasceva l'errore "File CRC differs from ZIP CRC". */
+$('go').onclick = async () => {
+  if (!romFile && !libFile) return;
+  const sys = SYSTEMS.find(s => s.core === $('sys').value);
+
+  // --- BIOS ---------------------------------------------------------------
+  // BIOS: passiamo un URL http vero (MAI un File). Il core scrive il firmware
+  // nel proprio filesystem usando l'ultimo segmento dell'URL come nome: qui e'
+  // il nome canonico (es. scph5502.bin), esattamente cio' che il core cerca.
+  // Passare un File faceva chiamare .split() su un oggetto -> "t.split is not
+  // a function" e l'avvio moriva prima ancora di partire.
+  let biosUrl = null, biosName = null;
+  const auto = $('bios-auto').checked;
+  const pick = auto ? autoBios($('sys').value) : null;
+  const fromFolder = auto ? (pick ? pick.file : '') : $('bios-sel').value;
+  if (fromFolder) {
+    biosName = canonName(fromFolder);
+    biosUrl  = '/firmware/' + encodeURIComponent(fromFolder) + '/' + biosName;
+  } else if (biosFile && sys && sys.bios) {
+    // Un BIOS trascinato arriverebbe al core come oggetto File, ed e'
+    // esattamente cio' che lo mandava in crash. Serve il nome esatto, quindi
+    // deve passare dal server. Blocchiamo solo i core che il BIOS lo pretendono:
+    // per GBA, NES, SNES e simili non serve e non deve dare fastidio.
+    alert('Il BIOS trascinato non e\' supportato.\n\nMettilo nella cartella data\\bios e lascia la modalita\' BIOS su "automatico", oppure selezionalo dal menu BIOS.');
+    return;
+  }
+
+  /* GIOCO: due strade, entrambe valide.
+     - dal menu a tendina  -> URL http servito da noi
+     - trascinato dal disco -> oggetto File
+
+     Il File va benissimo: EmulatorJS lo gestisce apposta
+       if (this.config.gameUrl instanceof File) this.config.gameUrl = ...name
+     Il crash "t.split is not a function" NON veniva da qui, veniva dal BIOS
+     passato come File (downloadGameFile fa assetUrl.split() senza controlli).
+     Il BIOS ora e' un URL, quindi trascinare il gioco e' di nuovo sicuro. */
+  const gameName = libFile ? libFile.name : romFile.name;
+
+  $('home').hidden = true;
+  $('player').hidden = false;
+  $('ptitle').textContent = gameName + (biosName ? '  ·  🧠 ' + biosName : '');
+
+  window.EJS_player        = '#game';
+  window.EJS_core          = sys.core;
+  // Serve a dare un nome stabile ai salvataggi anche col file trascinato.
+  window.EJS_gameName      = gameName.replace(/\.[^.]+$/, '');
+  window.EJS_gameUrl       = libFile ? libFile.url : romFile;
+  if (biosUrl) window.EJS_biosUrl = biosUrl;       // il BIOS resta SEMPRE un URL
+  window.EJS_startOnLoaded = true;
+
+  // Nome con cui il salvataggio finisce su disco. Deve essere stabile: lo
+  // stesso gioco deve ritrovare la sua memory card ad ogni avvio.
+  SAVE_ID = window.EJS_gameName.replace(/[^\w.\- ()&',+!\[\]]/g, '_').slice(0, 100);
+
+  // Quando la partita parte davvero: recupera il salvataggio e avvia il
+  // salvataggio periodico. EmulatorJS chiama questa funzione da solo.
+  window.EJS_onGameStart = () => {
+    setTimeout(() => { restoreSave(); startSaveLoop(); }, 800);
+  };
+  // Senza cross-origin isolation SharedArrayBuffer non esiste: chiediamo
+  // esplicitamente il core a thread singolo, altrimenti il caricamento fallisce.
+  window.EJS_threads = (typeof SharedArrayBuffer !== 'undefined') && window.crossOriginIsolated === true;
+  window.EJS_pathtodata    = 'https://cdn.emulatorjs.org/stable/data/';
+
+  // loader.js è il vero punto d'ingresso: costruisce la config dalle variabili
+  // EJS_* qui sopra e istanzia l'emulatore. Caricare emulator.min.js da solo
+  // definisce la classe ma non la avvia mai (schermo nero muto).
+  // Cosa stiamo davvero passando al core: serve per capire i guasti.
+  const info = [
+    'build          : 15',
+    'core (EJS_core): ' + window.EJS_core,
+    'gioco          : ' + (libFile ? libFile.url : romFile.name + '  (file trascinato)'),
+    'BIOS (URL)     : ' + (window.EJS_biosUrl || 'NESSUNO'),
+    'BIOS modalità  : ' + ($('bios-auto').checked ? 'automatico' : 'manuale'),
+    'BIOS origine   : ' + (fromFolder || (biosFile ? 'file dal disco' : '—')),
+    'file in data/bios trovati: ' + BIOSFILES.length,
+    'SharedArrayBuffer: ' + (typeof SharedArrayBuffer !== 'undefined' ? 'sì' : 'NO'),
+    'crossOriginIsolated: ' + (window.crossOriginIsolated ? 'sì' : 'NO'),
+    'EJS_threads    : ' + window.EJS_threads,
+  ].join('\n');
+  $('diag').textContent = info;
+  console.log('[Game Online]\n' + info);
+
+  const s = document.createElement('script');
+  s.src = 'https://cdn.emulatorjs.org/stable/data/loader.js';
+  document.body.appendChild(s);
+};
+
+/* ---------- SALVATAGGI ----------------------------------------------------
+   Due livelli, indipendenti:
+   1) EmulatorJS salva gia' da solo nel browser: monta /data/saves come IDBFS
+      con autoPersist, quindi riaprendo la pagina la partita e' ancora li'.
+   2) In piu' noi ne teniamo copia su DISCO in data/memcards, cosi' e' un file
+      vero: si puo' copiare, spostare, mettere in salvo.
+   getSaveFile() restituisce la memory card; se il gioco non ne ha ancora
+   scritta una torna null, ed e' normale nei primi minuti di gioco. */
+let SAVE_ID = null, saveTimer = null, lastSaveSize = -1;
+
+function saveEndpoint() { return '/api/save/' + encodeURIComponent(SAVE_ID); }
+
+/** Rimette su disco la memory card. Silenzioso: non deve mai disturbare. */
+async function pushSave(reason) {
+  const gm = window.EJS_emulator && window.EJS_emulator.gameManager;
+  if (!gm || !SAVE_ID) return;
+  let data = null;
+  try { data = gm.getSaveFile(); } catch (e) { return; }
+  if (!data || !data.length) return;
+  if (data.length === lastSaveSize && reason === 'auto') return;  // niente di nuovo
+  lastSaveSize = data.length;
+  try {
+    await fetch(saveEndpoint(), { method: 'POST', body: data });
+    if (reason !== 'auto') flash(t('saveOk'));
+  } catch (e) {}
+}
+
+/** Alla chiusura della scheda fetch non fa in tempo: serve sendBeacon. */
+function pushSaveOnExit() {
+  const gm = window.EJS_emulator && window.EJS_emulator.gameManager;
+  if (!gm || !SAVE_ID) return;
+  try {
+    const data = gm.getSaveFile();
+    if (data && data.length && navigator.sendBeacon)
+      navigator.sendBeacon(saveEndpoint(), new Blob([data]));
+  } catch (e) {}
+}
+
+/** Recupera dal disco il salvataggio del gioco appena avviato. */
+async function restoreSave() {
+  const gm = window.EJS_emulator && window.EJS_emulator.gameManager;
+  if (!gm || !SAVE_ID) return;
+  try {
+    const r = await fetch(saveEndpoint(), { cache: 'no-store' });
+    if (!r.ok) return;                       // nessun salvataggio precedente
+    const buf = new Uint8Array(await r.arrayBuffer());
+    if (!buf.length) return;
+    const path = gm.getSaveFilePath();
+    if (!path) return;
+    gm.writeFile(path, buf);                 // scrive nel filesystem del core
+    gm.loadSaveFiles();                      // e lo fa rileggere
+    flash(t('saveBack'));
+  } catch (e) {}
+}
+
+/** Messaggino discreto dentro al player. */
+function flash(txt) {
+  const el = $('savemsg');
+  if (!el) return;
+  el.textContent = txt;
+  el.style.opacity = '1';
+  setTimeout(() => { el.style.opacity = '0'; }, 3500);
+}
+
+function startSaveLoop() {
+  clearInterval(saveTimer);
+  saveTimer = setInterval(() => pushSave('auto'), 20000);
+  window.addEventListener('beforeunload', pushSaveOnExit);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') pushSave('auto');
+  });
+}
+
+$('back').onclick = async () => { await pushSave('manuale'); location.reload(); };
+$('diagbtn').onclick = () => { $('diag').hidden = !$('diag').hidden; };
+$('savebtn').onclick = () => pushSave('manuale');
+
+// All'avvio riempiamo ENTRAMBI gli elenchi: senza loadRoms() la tendina dei
+// giochi resta vuota (era il motivo per cui la libreria non compariva mai).
+// Selettore lingua: si ricorda la scelta e parte dalla lingua del browser.
+(function initLang() {
+  const sel = $('lang');
+  for (const [code, name] of LANGS) {
+    const o = document.createElement('option');
+    o.value = code; o.textContent = name;
+    sel.appendChild(o);
+  }
+  // Lingua predefinita: inglese. Si passa a un'altra solo se l'utente la
+  // sceglie dal menu: quella scelta viene ricordata per le volte successive.
+  let saved = null;
+  try { saved = localStorage.getItem('gameonline-lang'); } catch (e) {}
+  const start = (saved && I18N[saved]) ? saved : 'en';
+  sel.value = start;
+  sel.onchange = () => applyLang(sel.value);
+  applyLang(start);
+})();
+
+loadRoms();
+loadBiosList();
+</script>
+</body>
+</html>
