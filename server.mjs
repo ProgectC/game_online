@@ -64,8 +64,8 @@ const STANZA = {
   espulsi: new Set(),     // token e IP
   chiusa: false,          // chiusa = il link non fa entrare piu' NESSUNO di nuovo,
                           // ma chi e' gia' dentro resta e continua a giocare
-  partita: null,          // { url, core, nome, ts } - il gioco che l'host ha avviato:
-                          // gli ospiti lo vedono e lo fanno partire da soli
+  partita: null,          // { url, core, nome, ts } - il gioco che l'host ha avviato
+  postaHost: [],          // messaggi degli ospiti diretti all'host (collegamento diretto)
 };
 
 const OSPITE_SCADUTO = 25000;   // 25s senza segni di vita = uscito
@@ -84,6 +84,7 @@ function nuovaStanza() {
   STANZA.espulsi.clear();
   STANZA.chiusa = false;
   STANZA.partita = null;
+  STANZA.postaHost.length = 0;
   console.log(`\n  🔑 Nuova stanza. Codice: ${CODE}\n`);
 }
 
@@ -298,6 +299,47 @@ const server = createServer(async (req, res) => {
         codice: CODE,
         aperto: HOST === '0.0.0.0',
       }));
+      return;
+    }
+
+    /* ---- CASSETTA POSTALE per il collegamento diretto -------------------
+       I due browser devono scambiarsi qualche messaggio tecnico per aprire un
+       canale diretto fra loro (video del gioco in andata, tasti in ritorno).
+       Il server fa solo da portalettere: prende i messaggi e li consegna.
+       Dopo il collegamento il video NON passa piu' di qui: va da PC a PC. */
+    if (rel === '/api/rtc/send' && req.method === 'POST') {
+      const b = await leggiJson(req);
+      const host = isLocal(req);
+      const limite = (arr) => { while (arr.length > 60) arr.shift(); };   // niente accumuli
+      if (host) {
+        const o = STANZA.ospiti.get(b.a);
+        if (o) { o.posta = o.posta || []; o.posta.push(b.msg); limite(o.posta); }
+      } else {
+        const tok = tokenDi(req);
+        const o = tok ? STANZA.ospiti.get(tok) : null;
+        if (!o) { res.writeHead(200).end('{}'); return; }
+        o.visto = Date.now();
+        STANZA.postaHost.push({ da: tok, nick: o.nick, msg: b.msg });
+        limite(STANZA.postaHost);
+      }
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.writeHead(200).end('{"ok":true}');
+      return;
+    }
+
+    if (rel === '/api/rtc/poll' && req.method === 'GET') {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      if (isLocal(req)) {
+        const m = STANZA.postaHost.splice(0, STANZA.postaHost.length);
+        res.writeHead(200).end(JSON.stringify({ messaggi: m }));
+      } else {
+        const tok = tokenDi(req);
+        const o = tok ? STANZA.ospiti.get(tok) : null;
+        if (o) o.visto = Date.now();
+        const m = (o && o.posta) ? o.posta.splice(0, o.posta.length) : [];
+        res.writeHead(200).end(JSON.stringify({ messaggi: m, ruolo: o ? o.ruolo : null }));
+      }
       return;
     }
 
