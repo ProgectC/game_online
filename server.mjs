@@ -324,12 +324,29 @@ const server = createServer(async (req, res) => {
         STANZA.ospiti.set(tok, {
           nick,
           ruolo: gia ? gia.ruolo : 'spettatore',   // si entra a guardare
+          pronto: gia ? gia.pronto : false,        // finche' non preme "Sono pronto"
           ip: req.socket.remoteAddress || '',
           visto: Date.now(),
           entrato: gia ? gia.entrato : Date.now(),
         });
         console.log(`  👋 "${nick}" e' entrato nella stanza`);
         return rispondi({ ok: true, ruolo: STANZA.ospiti.get(tok).ruolo });
+      }
+
+      /* "Sono pronto": l'ospite ha scritto il nome, il gioco e' precaricato e
+         dichiara di essere pronto. L'host lo vede e sa che puo' avviare. */
+      if (rel === '/api/room/ready' && req.method === 'POST') {
+        if (host) return rispondi({ ok: true });
+        const tok = tokenDi(req);
+        const io = tok ? STANZA.ospiti.get(tok) : null;
+        if (!io) return rispondi({ ok: false });
+        const b = await leggiJson(req);
+        io.pronto = b.pronto !== false;
+        io.visto = Date.now();
+        console.log(io.pronto
+          ? `  ✅ "${io.nick}" e' PRONTO`
+          : `  ⏳ "${io.nick}" non e' piu' pronto`);
+        return rispondi({ ok: true, pronto: io.pronto });
       }
 
       // Chi c'e' adesso. Serve anche da battito: dice che sei ancora vivo.
@@ -343,11 +360,12 @@ const server = createServer(async (req, res) => {
             host: false,
             entrato: !!io,
             ruolo: io ? io.ruolo : null,
+            pronto: io ? io.pronto : false,
             chiusa: STANZA.chiusa,
             partita: STANZA.partita,
             hostNick: STANZA.hostNick,
             // L'ospite vede i nomi, non i token: non deve poter espellere.
-            presenti: [...STANZA.ospiti.values()].map(o => ({ nick: o.nick, ruolo: o.ruolo })),
+            presenti: [...STANZA.ospiti.values()].map(o => ({ nick: o.nick, ruolo: o.ruolo, pronto: o.pronto })),
           });
         }
         return rispondi({
@@ -357,9 +375,10 @@ const server = createServer(async (req, res) => {
           partita: STANZA.partita,
           hostNick: STANZA.hostNick,
           presenti: [...STANZA.ospiti.entries()].map(([t, o]) => ({
-            token: t, nick: o.nick, ruolo: o.ruolo, ip: o.ip,
+            token: t, nick: o.nick, ruolo: o.ruolo, pronto: o.pronto, ip: o.ip,
             da: Math.floor((Date.now() - o.entrato) / 1000),
           })),
+          pronti: [...STANZA.ospiti.values()].filter(o => o.pronto).length,
           espulsi: STANZA.espulsi.size,
         });
       }
@@ -555,6 +574,11 @@ const server = createServer(async (req, res) => {
     // vecchia dalla cache e le modifiche non si vedrebbero.
     if (ext === '.html' || ext === '.js' || ext === '.css') {
       res.setHeader('Cache-Control', 'no-store, must-revalidate');
+    } else if (rel.startsWith('/data/roms/') || rel.startsWith('/data/covers/')) {
+      /* I giochi non cambiano mai. Diciamo al browser di tenerseli: cosi' il
+         precaricamento dell'ospite serve davvero e all'avvio il gioco parte
+         subito, senza riscaricare centinaia di MB. */
+      res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
     }
 
     // Range: serve per i file grandi senza caricarli tutti in memoria.
