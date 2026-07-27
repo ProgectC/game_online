@@ -81,7 +81,7 @@ select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(74,158,255,.15
     </svg></span>
     <div>
       <h1>Game Online</h1>
-      <p><span data-i18n="tagline">Emulatore multiconsole nel browser — basato su EmulatorJS</span> · <b id="ver">build 32</b></p>
+      <p><span data-i18n="tagline">Emulatore multiconsole nel browser — basato su EmulatorJS</span> · <b id="ver">build 33</b></p>
     </div>
     <select id="lang" title="Lingua / Language" style="width:auto;margin-left:auto;padding:6px 10px;font-size:12.5px"></select>
   </header>
@@ -1725,8 +1725,16 @@ function collegaTocco() {
     const p = (e.changedTouches && e.changedTouches[0]) || e;
     if (!p) return;
     if (suUnTasto(e.target)) return;          // stai premendo un tasto, non lo schermo
+
+    /* Fermiamo il tocco QUI. Senza questo arriva anche a EmulatorJS, che lo
+       legge come "apri il menu": toccavi lo schermo del gioco e si apriva
+       Restart / Pause / Save State invece di succedere qualcosa nel gioco. */
+    e.stopPropagation();
+
     const opz = {
-      bubbles: true, cancelable: true, view: window,
+      /* bubbles: false -> l'evento resta sul canvas e lo riceve solo il gioco.
+         Se salisse, riaprirebbe il menu esattamente come prima. */
+      bubbles: false, cancelable: true, view: window,
       clientX: p.clientX, clientY: p.clientY,
       button: 0, buttons: tipo === 'mouseup' ? 0 : 1,
     };
@@ -1738,9 +1746,9 @@ function collegaTocco() {
     }
   };
 
-  cont.addEventListener('touchstart', (e) => manda('mousedown', e), { capture: true, passive: true });
-  cont.addEventListener('touchmove',  (e) => manda('mousemove', e), { capture: true, passive: true });
-  cont.addEventListener('touchend',   (e) => manda('mouseup', e),   { capture: true, passive: true });
+  cont.addEventListener('touchstart', (e) => manda('mousedown', e), { capture: true, passive: false });
+  cont.addEventListener('touchmove',  (e) => manda('mousemove', e), { capture: true, passive: false });
+  cont.addEventListener('touchend',   (e) => manda('mouseup', e),   { capture: true, passive: false });
 }
 
 function aggiornaTastoTocco() {
