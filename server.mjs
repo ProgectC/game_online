@@ -64,6 +64,8 @@ const STANZA = {
   espulsi: new Set(),     // token e IP
   chiusa: false,          // chiusa = il link non fa entrare piu' NESSUNO di nuovo,
                           // ma chi e' gia' dentro resta e continua a giocare
+  partita: null,          // { url, core, nome, ts } - il gioco che l'host ha avviato:
+                          // gli ospiti lo vedono e lo fanno partire da soli
 };
 
 const OSPITE_SCADUTO = 25000;   // 25s senza segni di vita = uscito
@@ -81,6 +83,7 @@ function nuovaStanza() {
   STANZA.ospiti.clear();
   STANZA.espulsi.clear();
   STANZA.chiusa = false;
+  STANZA.partita = null;
   console.log(`\n  🔑 Nuova stanza. Codice: ${CODE}\n`);
 }
 
@@ -341,6 +344,7 @@ const server = createServer(async (req, res) => {
             entrato: !!io,
             ruolo: io ? io.ruolo : null,
             chiusa: STANZA.chiusa,
+            partita: STANZA.partita,
             hostNick: STANZA.hostNick,
             // L'ospite vede i nomi, non i token: non deve poter espellere.
             presenti: [...STANZA.ospiti.values()].map(o => ({ nick: o.nick, ruolo: o.ruolo })),
@@ -350,6 +354,7 @@ const server = createServer(async (req, res) => {
           host: true,
           codice: CODE,
           chiusa: STANZA.chiusa,
+          partita: STANZA.partita,
           hostNick: STANZA.hostNick,
           presenti: [...STANZA.ospiti.entries()].map(([t, o]) => ({
             token: t, nick: o.nick, ruolo: o.ruolo, ip: o.ip,
@@ -382,6 +387,30 @@ const server = createServer(async (req, res) => {
           o.ruolo = ruolo;
           console.log(`  🎮 "${o.nick}" ora e' ${ruolo}`);
         }
+        return rispondi({ ok: true });
+      }
+
+      /* L'host ha premuto Avvia: lo registriamo qui. Gli ospiti, che
+         controllano ogni pochi secondi, vedono la partita e la fanno partire
+         sul loro schermo con lo stesso gioco. */
+      if (rel === '/api/room/start' && req.method === 'POST') {
+        const b = await leggiJson(req);
+        if (typeof b.url !== 'string' || !b.url.startsWith('/data/roms/')) {
+          return rispondi({ ok: false });     // solo giochi serviti da noi
+        }
+        STANZA.partita = {
+          url: b.url,
+          core: String(b.core || '').slice(0, 40),
+          nome: pulisciNick(b.nome).slice(0, 60),
+          ts: Date.now(),
+        };
+        console.log(`  ▶ Partita avviata: ${STANZA.partita.nome} (parte anche agli ospiti)`);
+        return rispondi({ ok: true });
+      }
+
+      if (rel === '/api/room/stop' && req.method === 'POST') {
+        STANZA.partita = null;
+        console.log('  ⏹ Partita chiusa');
         return rispondi({ ok: true });
       }
 
